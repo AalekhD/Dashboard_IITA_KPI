@@ -191,78 +191,52 @@ def create_heatmap_visualization(excel_file_path):
                 data_values.append(row_data)
                 original_values.append(orig_data)
         
-        # Debug output (temporary)
-        st.write(f"📊 **Data Info:**")
-        st.write(f"Programs found: {len(programs)}")
-        st.write(f"KPIs found: {len(kpi_names)}")
-        if programs:
-            st.write(f"Categories/Programs: {programs[:5]}...")  # Show first 5
-        if kpi_names:
-            st.write(f"KPI Names: {kpi_names}")
+        # Debug output (disabled)
+        # st.write(f"📊 **Data Info:**")
+        # st.write(f"Programs found: {len(programs)}")
+        # st.write(f"KPIs found: {len(kpi_names)}")
+        # if programs:
+        #     st.write(f"Categories/Programs: {programs[:5]}...")  # Show first 5
+        # if kpi_names:
+        #     st.write(f"KPI Names: {kpi_names}")
         
         # Create dataframe
         if data_values and len(kpi_names) > 0:
             df_heatmap = pd.DataFrame(data_values, columns=kpi_names[:len(data_values[0])])
             df_heatmap.index = programs
             
-            # Calculate data statistics for dynamic color scaling
-            flat_data = df_heatmap.values.flatten()
-            flat_data = flat_data[flat_data > 0]  # Exclude zeros
+            # Replace 0 or NaN values with NaN to exclude them from coloring
+            df_heatmap_for_color = df_heatmap.replace(0, np.nan)
             
-            if len(flat_data) > 0:
-                min_val = np.min(flat_data)
-                max_val = np.max(flat_data)
-                q1 = np.percentile(flat_data, 25)
-                q2 = np.percentile(flat_data, 50)
-                q3 = np.percentile(flat_data, 75)
-            else:
-                min_val = 0
-                max_val = 1
-                q1 = 0.25
-                q2 = 0.5
-                q3 = 0.75
-            
-            # Custom colorscale: <= 1 (red), 1-8 (orange), 8-13 (lime yellow), > 13 (green)
-            # Create a color mapping function
-            def get_color_for_value(val):
-                try:
-                    v = float(val)
-                    if v <= 1:
-                        return 0  # Red
-                    elif v <= 8:
-                        return 1  # Orange
-                    elif v <= 13:
-                        return 2  # Lime Yellow
+            # Normalize each column (KPI) independently: scale to 0-1 range per column
+            df_normalized = df_heatmap_for_color.copy()
+            for col in df_normalized.columns:
+                col_values = df_heatmap_for_color[col].dropna()
+                if len(col_values) > 0:
+                    min_val = col_values.min()
+                    max_val = col_values.max()
+                    mid_val = (max_val + min_val) / 2
+                    
+                    # Normalize: values from 0 (min) to 1 (max)
+                    if max_val > min_val:
+                        df_normalized[col] = (df_heatmap_for_color[col] - min_val) / (max_val - min_val)
                     else:
-                        return 3  # Green
-                except:
-                    return 0
+                        df_normalized[col] = 0.5  # If all values are the same
             
-            # Apply color mapping to create numeric representation
-            color_data = df_heatmap.apply(lambda col: col.apply(lambda x: get_color_for_value(x)))
-            
-            # Replace any NaN values with 0
-            color_data = color_data.fillna(0)
-            
-            # Define colors for discrete ranges
+            # Use continuous color scale: Red (0/min) → Yellow (0.5/mid) → Green (1/max)
             colorscale = [
-                [0.0, '#FF0000'],      # Red for 0
-                [0.25, '#FF0000'],     # Red continues
-                [0.25, '#FFA500'],     # Orange starts
-                [0.50, '#FFA500'],     # Orange continues  
-                [0.50, '#FFFF00'],     # Yellow starts
-                [0.75, '#FFFF00'],     # Yellow continues
-                [0.75, '#00AA00'],     # Green starts
-                [1.0, '#00AA00']       # Green ends
+                [0.0, '#FF0000'],      # Red for lowest values
+                [0.5, '#FFFF00'],      # Yellow for midpoint
+                [1.0, '#00AA00']       # Green for highest values
             ]
 
-            fig = px.imshow(color_data,
-                            labels=dict(x="KPI", y="Program", color="Range"),
+            fig = px.imshow(df_normalized,
+                            labels=dict(x="KPI", y="Program", color="Value"),
                             color_continuous_scale=colorscale,
                             text_auto=False,
                             aspect="auto",
                             zmin=0,
-                            zmax=3)
+                            zmax=1)
             
             # Add original values as text
             fig.update_traces(
@@ -275,9 +249,10 @@ def create_heatmap_visualization(excel_file_path):
                 height=600 + (len(programs) * 20),  # Dynamic height based on number of programs
                 xaxis_title="KPI Type", 
                 yaxis_title="Program",
-                title="KPI Heat Map - Programs vs KPI Count",
+                title="KPI Heat Map - Programs vs KPI Count (Color scale per column)",
                 xaxis_tickangle=-45,
-                margin=dict(l=200, r=50, t=80, b=150)  # Better margins for labels
+                margin=dict(l=200, r=50, t=80, b=150),  # Better margins for labels
+                coloraxis_colorbar=dict(title="Normalized Value")
             )
             
             return fig
