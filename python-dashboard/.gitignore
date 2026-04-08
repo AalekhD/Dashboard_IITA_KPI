@@ -1,0 +1,11 @@
+.streamlit/
+__pycache__/
+*.pyc
+.DS_Store
+*.sqlite
+*.sqlite3
+uploads/
+data/*.csv
+.env
+.venv
+venv/
