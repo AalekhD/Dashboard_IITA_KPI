@@ -433,18 +433,21 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16):
             longest_line = max((len(line.replace('<b>','').replace('</b>','')) for t in kpi_tick_names for line in t.split('<br>')), default=10)
             LABEL_PX = max(60, int((longest_line * CHAR_PX + max_lines * LINE_H_PX) * 0.71) + 10)
             BAND_PX  = 30
-            GAP_PX   = 20  # extra space between tick labels and group bands
+            GAP_PX   = 5  # extra space between tick labels and group bands
             dynamic_top = LABEL_PX + GAP_PX + BAND_PX
             row_px = 22  # compact rows to fit on screen
             col_px = 80  # wide enough so diagonal labels don't override each other
             LEFT_M = 300
             RIGHT_M = 20
+            BOTTOM_M = 20
             chart_height = dynamic_top + 40 + len(all_programs) * row_px
             chart_width  = LEFT_M + RIGHT_M + len(kpi_names) * col_px
 
-            # Group bands sit just above the tick labels in paper coords
-            band_y0 = 1.0 + (LABEL_PX + GAP_PX) / chart_height + 0.01
-            band_y1 = band_y0 + BAND_PX / chart_height
+            # Paper coords above y=1.0 use the PLOT AREA height (not total chart height)
+            # plot_area_height = chart_height - top_margin - bottom_margin
+            plot_area_h = chart_height - dynamic_top - BOTTOM_M
+            band_y0 = 1.0 + (LABEL_PX + GAP_PX) / plot_area_h
+            band_y1 = band_y0 + BAND_PX / plot_area_h
             band_label_y = (band_y0 + band_y1) / 2
 
             # Move x-axis to top with wrapped tick labels
@@ -476,7 +479,7 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16):
                 ),
                 yaxis_title="",
                 title="",
-                margin=dict(l=LEFT_M, r=RIGHT_M, t=dynamic_top, b=20),
+                margin=dict(l=LEFT_M, r=RIGHT_M, t=dynamic_top, b=BOTTOM_M),
                 coloraxis_showscale=False
             )
 
@@ -656,15 +659,11 @@ with tab3:
                 if os.path.exists(heatmap_file):
                     fig, df_below, df_raw = create_heatmap_visualization(heatmap_file)
                     if fig:
-                        st.caption(f"📄 Source: {os.path.basename(heatmap_file)} ({heatmap_file})")
                         st.plotly_chart(fig, use_container_width=False, config={'scrollZoom': False})
                     if df_below is not None and not df_below.empty:
                         st.markdown("---")
                         st.markdown("**Additional Data**")
                         render_gray_table(df_below)
-                    if df_raw is not None:
-                        with st.expander("🔍 Raw Excel Data (verification)"):
-                            st.dataframe(df_raw, use_container_width=True)
                 else:
                     st.info("📁 Waiting for: Heat map 1.xlsx")
             except Exception as e:
@@ -677,15 +676,11 @@ with tab3:
                 if os.path.exists(heatmap_file):
                     fig, df_below, df_raw = create_heatmap_visualization(heatmap_file)
                     if fig:
-                        st.caption(f"📄 Source: {os.path.basename(heatmap_file)} ({heatmap_file})")
                         st.plotly_chart(fig, use_container_width=False, config={'scrollZoom': False})
                     if df_below is not None and not df_below.empty:
                         st.markdown("---")
                         st.markdown("**Additional Data**")
                         render_gray_table(df_below)
-                    if df_raw is not None:
-                        with st.expander("🔍 Raw Excel Data (verification)"):
-                            st.dataframe(df_raw, use_container_width=True)
                 else:
                     st.info("📁 Waiting for: Heat map 2.xlsx")
             except Exception as e:
@@ -698,15 +693,11 @@ with tab3:
                 if os.path.exists(heatmap_file):
                     fig, df_below, df_raw = create_heatmap_visualization(heatmap_file)
                     if fig:
-                        st.caption(f"📄 Source: {os.path.basename(heatmap_file)} ({heatmap_file})")
                         st.plotly_chart(fig, use_container_width=False, config={'scrollZoom': False})
                     if df_below is not None and not df_below.empty:
                         st.markdown("---")
                         st.markdown("**Additional Data**")
                         render_gray_table(df_below)
-                    if df_raw is not None:
-                        with st.expander("🔍 Raw Excel Data (verification)"):
-                            st.dataframe(df_raw, use_container_width=True)
                 else:
                     st.info("📁 Waiting for: Heat map 3.xlsx")
             except Exception as e:
@@ -719,15 +710,11 @@ with tab3:
                 if os.path.exists(heatmap_file):
                     fig, df_below, df_raw = create_heatmap_visualization(heatmap_file)
                     if fig:
-                        st.caption(f"📄 Source: {os.path.basename(heatmap_file)} ({heatmap_file})")
                         st.plotly_chart(fig, use_container_width=False, config={'scrollZoom': False})
                     if df_below is not None and not df_below.empty:
                         st.markdown("---")
                         st.markdown("**Additional Data**")
                         render_gray_table(df_below)
-                    if df_raw is not None:
-                        with st.expander("🔍 Raw Excel Data (verification)"):
-                            st.dataframe(df_raw, use_container_width=True)
                 else:
                     st.info("📁 Waiting for: Heat map 4.xlsx")
             except Exception as e:
@@ -748,15 +735,11 @@ with tab3:
                 if os.path.exists(heatmap_file):
                     fig, df_below, df_raw = create_heatmap_visualization(heatmap_file)
                     if fig:
-                        st.caption(f"📄 Source: {os.path.basename(heatmap_file)} ({heatmap_file})")
                         st.plotly_chart(fig, use_container_width=False, config={'scrollZoom': False})
                     if df_below is not None and not df_below.empty:
                         st.markdown("---")
                         st.markdown("**Additional Data**")
                         render_gray_table(df_below)
-                    if df_raw is not None:
-                        with st.expander("🔍 Raw Excel Data (verification)"):
-                            st.dataframe(df_raw, use_container_width=True)
                 else:
                     st.info("📁 Waiting for: Heat map 5.xlsx")
             except Exception as e:
@@ -769,15 +752,11 @@ with tab3:
                 if os.path.exists(heatmap_file):
                     fig, df_below, df_raw = create_heatmap_visualization(heatmap_file)
                     if fig:
-                        st.caption(f"📄 Source: {os.path.basename(heatmap_file)} ({heatmap_file})")
                         st.plotly_chart(fig, use_container_width=False, config={'scrollZoom': False})
                     if df_below is not None and not df_below.empty:
                         st.markdown("---")
                         st.markdown("**Additional Data**")
                         render_gray_table(df_below)
-                    if df_raw is not None:
-                        with st.expander("🔍 Raw Excel Data (verification)"):
-                            st.dataframe(df_raw, use_container_width=True)
                 else:
                     st.info("📁 Waiting for: Heat map 6.xlsx")
             except Exception as e:
@@ -790,15 +769,11 @@ with tab3:
                 if os.path.exists(heatmap_file):
                     fig, df_below, df_raw = create_heatmap_visualization(heatmap_file)
                     if fig:
-                        st.caption(f"📄 Source: {os.path.basename(heatmap_file)} ({heatmap_file})")
                         st.plotly_chart(fig, use_container_width=False, config={'scrollZoom': False})
                     if df_below is not None and not df_below.empty:
                         st.markdown("---")
                         st.markdown("**Additional Data**")
                         render_gray_table(df_below)
-                    if df_raw is not None:
-                        with st.expander("🔍 Raw Excel Data (verification)"):
-                            st.dataframe(df_raw, use_container_width=True)
                 else:
                     st.info("📁 Waiting for: Heat map 7.xlsx")
             except Exception as e:
