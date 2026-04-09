@@ -289,10 +289,13 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=17):
                 if len(col_values) > 0:
                     min_val = col_values.min()
                     max_val = col_values.max()
+                    not_nan = df_heatmap_for_color[col].notna()
                     if max_val > min_val:
                         df_normalized[col] = (df_heatmap_for_color[col] - min_val) / (max_val - min_val)
                     else:
-                        df_normalized[col] = 0.5
+                        # All values equal: assign midpoint only to non-NaN cells
+                        df_normalized[col] = np.nan
+                        df_normalized.loc[not_nan, col] = 0.5
 
             colorscale = [
                 [0.0, '#FF0000'],
@@ -331,6 +334,17 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=17):
                 textfont=dict(size=11, color='black')
             )
 
+            # Dynamic top margin: depends on max wrapped-label line count
+            # Each line ~22px at font-size 10; group band needs ~80px; title ~50px
+            max_label_lines = max((lbl.count('<br>') + 1) for lbl in wrapped_kpi_names) if wrapped_kpi_names else 1
+            dynamic_top = 60 + (max_label_lines * 22) + 90  # tick area + band + title
+
+            # Group bands start just above the tick labels in paper coords
+            # Empirically ~0.038 paper-units per line at typical chart height
+            band_y0 = 1.0 + max_label_lines * 0.038
+            band_y1 = band_y0 + 0.08
+            band_label_y = band_y0 + 0.04
+
             # Move x-axis to top with wrapped tick labels
             fig.update_layout(
                 height=700 + (len(programs) * 25),
@@ -344,16 +358,14 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=17):
                     tickfont=dict(size=10),
                     automargin=True,
                 ),
-                yaxis_title="Program",
-                title="KPI Heat Map - Programs vs KPI Count (Color scale per column)",
-                margin=dict(l=380, r=60, t=450, b=60),
-                coloraxis_colorbar=dict(title="Normalized Value")
+                yaxis_title="",
+                title="",
+                margin=dict(l=380, r=60, t=dynamic_top, b=60),
+                coloraxis_showscale=False
             )
 
             # Add KPI type group header rectangles + labels above the x-axis
-            # y0/y1 are in paper coords (1.0 = top of plot area).
-            # Tick labels (2 lines, size 10, horizontal) occupy ~1.00–1.10.
-            # Group bands sit above that at 1.12–1.22.
+            # Positions are dynamic (band_y0/y1/label_y) to avoid overlapping tick labels
             group_colors = [
                 '#00891a', '#005a8e', '#8e4f00', '#6a008e',
                 '#8e0000', '#006e6e', '#4a4a00', '#00456e'
@@ -365,14 +377,14 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=17):
                     type='rect',
                     xref='x', yref='paper',
                     x0=start_idx - 0.5, x1=end_idx + 0.5,
-                    y0=1.12, y1=1.22,
+                    y0=band_y0, y1=band_y1,
                     fillcolor=color,
                     line=dict(color='white', width=1),
                     layer='above'
                 )
                 fig.add_annotation(
                     xref='x', yref='paper',
-                    x=x_center, y=1.17,
+                    x=x_center, y=band_label_y,
                     text=f"<b>{group_name}</b>",
                     showarrow=False,
                     font=dict(color='white', size=10),
@@ -418,7 +430,7 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=17):
 df_programs, df_services, df_heatmap = load_kpi_data()
 
 # Tabs
-tab1, tab2, tab3 = st.tabs(["📊 Program Output KPIs", "🏢 Service Unit KPIs", "� KPI By Program"])
+tab1, tab2, tab3 = st.tabs(["📊 Program Output KPIs", "🏢 Service Unit KPIs", "🌡️ KPI By Program"])
 
 # Programs Tab
 with tab1:
@@ -467,7 +479,7 @@ with tab2:
 
 # KPI By Program Tab
 with tab3:
-    st.subheader("📊 KPI By Program")
+    st.subheader("🌡️ KPI By Program")
     
     # Two main sub-tabs
     sub_tab_a, sub_tab_b = st.tabs(["🔬 Research, Training, Product Development", "🏆 Recognition, Societal Impact & Inclusivity"])
