@@ -148,126 +148,277 @@ def excel_to_html_with_merged_cells(excel_file_path):
     return html
 
 # Function to create heatmap from KPI heat map file
-def create_heatmap_visualization(excel_file_path):
+# Returns (fig, df_below) where df_below contains rows beyond row 17 (or None)
+def create_heatmap_visualization(excel_file_path, heatmap_max_row=17):
     try:
         # Load with openpyxl to get clean numeric data
         wb = openpyxl.load_workbook(excel_file_path, data_only=True)
         ws = wb.active
-        
-        # Extract heatmap data starting from row 3 (headers) and row 4 (data)
-        # Column C has program names, columns D onwards have KPI values
-        
+
         programs = []
+        program_groups = []   # column B: GI / RAFS / ST etc.
         kpi_names = []
+        kpi_type_groups = []  # row 2: Research Outputs / Training etc.
         data_values = []
         original_values = []
-        
-        # Debug: Show file info
-        # st.write(f"📊 File: {excel_file_path}")
-        # st.write(f"Max rows: {ws.max_row}, Max cols: {ws.max_column}")
-        
+
+        # Programs/rows below heatmap_max_row
+        below_programs = []
+        below_data = []
+
+        # Build program-group map from column B (fill-forward for merged cells)
+        current_b = None
+        b_values = {}
+        for row_idx in range(4, ws.max_row + 1):
+            val = ws.cell(row=row_idx, column=2).value
+            if val is not None:
+                current_b = str(val)
+            b_values[row_idx] = current_b
+
         # Get KPI names from row 3 (starting from column D=4)
         for col_idx in range(4, ws.max_column + 1):
             cell_val = ws.cell(row=3, column=col_idx).value
             if cell_val is not None:
                 kpi_names.append(str(cell_val))
-        
-        # Get data from rows 4 onwards, columns C (program) and D onwards (values)
-        for row_idx in range(4, ws.max_row + 1):
+
+        # Get KPI type groups from row 2 (fill-forward for merged cells)
+        current_type = None
+        for col_idx in range(4, 4 + len(kpi_names)):
+            val = ws.cell(row=2, column=col_idx).value
+            if val is not None:
+                current_type = str(val)
+            kpi_type_groups.append(current_type or "")
+
+        # Helper: wrap a label at word boundaries for ~max_width chars per line
+        def wrap_label(text, max_width=15):
+            words = text.split()
+            lines, current = [], ""
+            for w in words:
+                if current and len(current) + 1 + len(w) > max_width:
+                    lines.append(current)
+                    current = w
+                else:
+                    current = (current + " " + w).strip()
+            if current:
+                lines.append(current)
+            return "<br>".join(lines)
+
+        # Compute KPI type group spans for header annotations
+        kpi_type_spans = []
+        if kpi_type_groups:
+            span_start = 0
+            span_name = kpi_type_groups[0]
+            for i, grp in enumerate(kpi_type_groups[1:], 1):
+                if grp != span_name:
+                    kpi_type_spans.append((span_name, span_start, i - 1))
+                    span_name = grp
+                    span_start = i
+            kpi_type_spans.append((span_name, span_start, len(kpi_type_groups) - 1))
+
+        # Get data from rows 4 to heatmap_max_row for the heatmap
+        for row_idx in range(4, heatmap_max_row + 1):
             program_cell = ws.cell(row=row_idx, column=3).value
             if program_cell is not None and program_cell != "None":
                 programs.append(str(program_cell))
+                program_groups.append(b_values.get(row_idx) or "")
                 row_data = []
                 orig_data = []
                 for col_idx in range(4, 4 + len(kpi_names)):
                     val = ws.cell(row=row_idx, column=col_idx).value
-                    # Convert to float if possible
+                    try:
+                        fval = float(val) if val is not None else None
+                    except:
+                        fval = None
+                    # Store None for missing/zero so we can display "NA"
+                    row_data.append(fval if fval else np.nan)
+                    orig_data.append(fval)
+                data_values.append(row_data)
+                original_values.append(orig_data)
+
+        # Collect rows beyond heatmap_max_row as "below" data
+        for row_idx in range(heatmap_max_row + 1, ws.max_row + 1):
+            program_cell = ws.cell(row=row_idx, column=3).value
+            if program_cell is not None and program_cell != "None":
+                below_programs.append(str(program_cell))
+                row_data = []
+                for col_idx in range(4, 4 + len(kpi_names)):
+                    val = ws.cell(row=row_idx, column=col_idx).value
                     try:
                         val = float(val) if val is not None else 0
                     except:
                         val = 0
                     row_data.append(val)
-                    orig_data.append(val)
-                data_values.append(row_data)
-                original_values.append(orig_data)
-        
-        # Debug output (disabled)
-        # st.write(f"📊 **Data Info:**")
-        # st.write(f"Programs found: {len(programs)}")
-        # st.write(f"KPIs found: {len(kpi_names)}")
-        # if programs:
-        #     st.write(f"Categories/Programs: {programs[:5]}...")  # Show first 5
-        # if kpi_names:
-        #     st.write(f"KPI Names: {kpi_names}")
-        
+                below_data.append(row_data)
+
+        # Build below-heatmap dataframe if there is extra data
+        df_below = None
+        if below_data and kpi_names:
+            df_below = pd.DataFrame(below_data, columns=kpi_names[:len(below_data[0])])
+            df_below.insert(0, "Program", below_programs)
+
+        # Compute program group spans for left-side bands (mirrors kpi_type_spans on y-axis)
+        program_group_spans = []
+        if program_groups:
+            span_start = 0
+            span_name = program_groups[0]
+            for i, grp in enumerate(program_groups[1:], 1):
+                if grp != span_name:
+                    program_group_spans.append((span_name, span_start, i - 1))
+                    span_name = grp
+                    span_start = i
+            program_group_spans.append((span_name, span_start, len(program_groups) - 1))
+
+        # y-axis labels: plain program names only (group shown as side band)
+        y_labels = programs
+
+        # Wrapped x-axis tick labels (two lines each)
+        wrapped_kpi_names = [wrap_label(k) for k in kpi_names]
+
         # Create dataframe
         if data_values and len(kpi_names) > 0:
             df_heatmap = pd.DataFrame(data_values, columns=kpi_names[:len(data_values[0])])
-            df_heatmap.index = programs
-            
-            # Replace 0 or NaN values with NaN to exclude them from coloring
-            df_heatmap_for_color = df_heatmap.replace(0, np.nan)
-            
-            # Normalize each column (KPI) independently: scale to 0-1 range per column
+            df_heatmap.index = y_labels
+
+            # NaN values (0/None in Excel) are excluded from coloring
+            df_heatmap_for_color = df_heatmap.copy()
+
+            # Normalize each column independently: 0 (min) to 1 (max)
             df_normalized = df_heatmap_for_color.copy()
             for col in df_normalized.columns:
                 col_values = df_heatmap_for_color[col].dropna()
                 if len(col_values) > 0:
                     min_val = col_values.min()
                     max_val = col_values.max()
-                    mid_val = (max_val + min_val) / 2
-                    
-                    # Normalize: values from 0 (min) to 1 (max)
                     if max_val > min_val:
                         df_normalized[col] = (df_heatmap_for_color[col] - min_val) / (max_val - min_val)
                     else:
-                        df_normalized[col] = 0.5  # If all values are the same
-            
-            # Use continuous color scale: Red (0/min) → Yellow (0.5/mid) → Green (1/max)
+                        df_normalized[col] = 0.5
+
             colorscale = [
-                [0.0, '#FF0000'],      # Red for lowest values
-                [0.5, '#FFFF00'],      # Yellow for midpoint
-                [1.0, '#00AA00']       # Green for highest values
+                [0.0, '#FF0000'],
+                [0.5, '#FFFF00'],
+                [1.0, '#00AA00']
             ]
 
-            fig = px.imshow(df_normalized,
-                            labels=dict(x="KPI", y="Program", color="Value"),
-                            color_continuous_scale=colorscale,
-                            text_auto=False,
-                            aspect="auto",
-                            zmin=0,
-                            zmax=1)
-            
-            # Add original values as text
-            fig.update_traces(
-                text=np.array(original_values).round(1),
-                texttemplate='%{text}',
-                textfont=dict(size=12, color='black')
+            # Build text display: "NA" for zero/null, rounded number otherwise
+            text_display = []
+            for row in original_values:
+                text_row = []
+                for v in row:
+                    if v is None or v == 0:
+                        text_row.append("NA")
+                    else:
+                        text_row.append(str(round(v, 1)))
+                text_display.append(text_row)
+
+            # Build figure using numpy array with explicit x/y labels
+            fig = px.imshow(
+                df_normalized.values,
+                x=kpi_names,
+                y=y_labels,
+                labels=dict(x="KPI", y="Program", color="Value"),
+                color_continuous_scale=colorscale,
+                text_auto=False,
+                aspect="auto",
+                zmin=0,
+                zmax=1
             )
-            
+
+            # Overlay text (NA or rounded value)
+            fig.update_traces(
+                text=np.array(text_display, dtype=object),
+                texttemplate='%{text}',
+                textfont=dict(size=11, color='black')
+            )
+
+            # Move x-axis to top with wrapped tick labels
             fig.update_layout(
-                height=600 + (len(programs) * 20),  # Dynamic height based on number of programs
-                xaxis_title="KPI Type", 
+                height=700 + (len(programs) * 25),
+                xaxis=dict(
+                    side='top',
+                    tickangle=0,
+                    title='',
+                    tickmode='array',
+                    tickvals=kpi_names,
+                    ticktext=wrapped_kpi_names,
+                    tickfont=dict(size=10),
+                    automargin=True,
+                ),
                 yaxis_title="Program",
                 title="KPI Heat Map - Programs vs KPI Count (Color scale per column)",
-                xaxis_tickangle=-45,
-                margin=dict(l=200, r=50, t=80, b=150),  # Better margins for labels
+                margin=dict(l=380, r=60, t=450, b=60),
                 coloraxis_colorbar=dict(title="Normalized Value")
             )
-            
-            return fig
+
+            # Add KPI type group header rectangles + labels above the x-axis
+            # y0/y1 are in paper coords (1.0 = top of plot area).
+            # Tick labels (2 lines, size 10, horizontal) occupy ~1.00–1.10.
+            # Group bands sit above that at 1.12–1.22.
+            group_colors = [
+                '#00891a', '#005a8e', '#8e4f00', '#6a008e',
+                '#8e0000', '#006e6e', '#4a4a00', '#00456e'
+            ]
+            for idx, (group_name, start_idx, end_idx) in enumerate(kpi_type_spans):
+                color = group_colors[idx % len(group_colors)]
+                x_center = (start_idx + end_idx) / 2
+                fig.add_shape(
+                    type='rect',
+                    xref='x', yref='paper',
+                    x0=start_idx - 0.5, x1=end_idx + 0.5,
+                    y0=1.12, y1=1.22,
+                    fillcolor=color,
+                    line=dict(color='white', width=1),
+                    layer='above'
+                )
+                fig.add_annotation(
+                    xref='x', yref='paper',
+                    x=x_center, y=1.17,
+                    text=f"<b>{group_name}</b>",
+                    showarrow=False,
+                    font=dict(color='white', size=10),
+                    align='center',
+                    bgcolor='rgba(0,0,0,0)'
+                )
+
+            # Add program group bands to the LEFT of the y-axis (mirrors top KPI-type bands)
+            # xref='paper': x0/x1 are fractions of the plot-area width (negative = in left margin)
+            # yref='y': y0/y1 are row indices (0 = first row, reversed axis puts it at top)
+            for idx, (group_name, start_idx, end_idx) in enumerate(program_group_spans):
+                color = group_colors[idx % len(group_colors)]
+                y_center = (start_idx + end_idx) / 2
+                fig.add_shape(
+                    type='rect',
+                    xref='paper', yref='y',
+                    x0=-0.22, x1=-0.10,
+                    y0=start_idx - 0.5, y1=end_idx + 0.5,
+                    fillcolor=color,
+                    line=dict(color='white', width=1),
+                    layer='above'
+                )
+                fig.add_annotation(
+                    xref='paper', yref='y',
+                    x=-0.16, y=y_center,
+                    text=f"<b>{group_name}</b>",
+                    showarrow=False,
+                    font=dict(color='white', size=10),
+                    align='center',
+                    textangle=-90,
+                    bgcolor='rgba(0,0,0,0)'
+                )
+
+            return fig, df_below
         else:
             st.error(f"No data found. Programs: {len(programs)}, KPIs: {len(kpi_names)}")
-            return None
+            return None, None
     except Exception as e:
         st.error(f"Error creating heatmap: {str(e)}")
-        return None
+        return None, None
 
 # Load data
 df_programs, df_services, df_heatmap = load_kpi_data()
 
 # Tabs
-tab1, tab2, tab3 = st.tabs(["📊 Program Output KPIs", "🏢 Service Unit KPIs", "🔥 KPI by Nr, FTE, $ and Time"])
+tab1, tab2, tab3 = st.tabs(["📊 Program Output KPIs", "🏢 Service Unit KPIs", "� KPI By Program"])
 
 # Programs Tab
 with tab1:
@@ -314,9 +465,9 @@ with tab2:
         mime="text/csv"
     )
 
-# KPI by Nr, FTE, $ and Time Tab
+# KPI By Program Tab
 with tab3:
-    st.subheader("🔥 KPI by Nr, FTE, $ and Time")
+    st.subheader("📊 KPI By Program")
     
     # Two main sub-tabs
     sub_tab_a, sub_tab_b = st.tabs(["🔬 Research, Training, Product Development", "🏆 Recognition, Societal Impact & Inclusivity"])
@@ -331,63 +482,71 @@ with tab3:
         
         with rtpd_tabs[0]:
             st.write("**Research, Training, Product Development - KPI by Nr**")
-            plot_container = st.empty()
             try:
                 heatmap_file = os.path.join(root_dir, 'data', 'Heat map 1.xlsx')
                 if os.path.exists(heatmap_file):
-                    fig = create_heatmap_visualization(heatmap_file)
+                    fig, df_below = create_heatmap_visualization(heatmap_file)
                     if fig:
-                        with plot_container.container():
-                            st.plotly_chart(fig, use_container_width=True)
+                        st.plotly_chart(fig, use_container_width=True)
+                    if df_below is not None and not df_below.empty:
+                        st.markdown("---")
+                        st.markdown("**Additional Data**")
+                        st.dataframe(df_below, use_container_width=True, hide_index=True)
                 else:
-                    plot_container.info("📁 Waiting for: Heat map 1.xlsx")
+                    st.info("📁 Waiting for: Heat map 1.xlsx")
             except Exception as e:
-                plot_container.warning(f"Could not load heatmap: {str(e)}")
-        
+                st.warning(f"Could not load heatmap: {str(e)}")
+
         with rtpd_tabs[1]:
             st.write("**Research, Training, Product Development - KPI by FTE**")
-            plot_container = st.empty()
             try:
                 heatmap_file = os.path.join(root_dir, 'data', 'Heat map 2.xlsx')
                 if os.path.exists(heatmap_file):
-                    fig = create_heatmap_visualization(heatmap_file)
+                    fig, df_below = create_heatmap_visualization(heatmap_file)
                     if fig:
-                        with plot_container.container():
-                            st.plotly_chart(fig, use_container_width=True)
+                        st.plotly_chart(fig, use_container_width=True)
+                    if df_below is not None and not df_below.empty:
+                        st.markdown("---")
+                        st.markdown("**Additional Data**")
+                        st.dataframe(df_below, use_container_width=True, hide_index=True)
                 else:
-                    plot_container.info("📁 Waiting for: Heat map 2.xlsx")
+                    st.info("📁 Waiting for: Heat map 2.xlsx")
             except Exception as e:
-                plot_container.warning(f"Could not load heatmap: {str(e)}")
-        
+                st.warning(f"Could not load heatmap: {str(e)}")
+
         with rtpd_tabs[2]:
             st.write("**Research, Training, Product Development - KPI by $**")
-            plot_container = st.empty()
             try:
                 heatmap_file = os.path.join(root_dir, 'data', 'Heat map 3.xlsx')
                 if os.path.exists(heatmap_file):
-                    fig = create_heatmap_visualization(heatmap_file)
+                    fig, df_below = create_heatmap_visualization(heatmap_file)
                     if fig:
-                        with plot_container.container():
-                            st.plotly_chart(fig, use_container_width=True)
+                        st.plotly_chart(fig, use_container_width=True)
+                    if df_below is not None and not df_below.empty:
+                        st.markdown("---")
+                        st.markdown("**Additional Data**")
+                        st.dataframe(df_below, use_container_width=True, hide_index=True)
                 else:
-                    plot_container.info("📁 Waiting for: Heat map 3.xlsx")
+                    st.info("📁 Waiting for: Heat map 3.xlsx")
             except Exception as e:
-                plot_container.warning(f"Could not load heatmap: {str(e)}")
-        
+                st.warning(f"Could not load heatmap: {str(e)}")
+
         with rtpd_tabs[3]:
             st.write("**Research, Training, Product Development - KPI over Time**")
-            plot_container = st.empty()
             try:
                 heatmap_file = os.path.join(root_dir, 'data', 'Heat map 4.xlsx')
                 if os.path.exists(heatmap_file):
-                    fig = create_heatmap_visualization(heatmap_file)
+                    fig, df_below = create_heatmap_visualization(heatmap_file)
                     if fig:
-                        with plot_container.container():
-                            st.plotly_chart(fig, use_container_width=True)
+                        st.plotly_chart(fig, use_container_width=True)
+                    if df_below is not None and not df_below.empty:
+                        st.markdown("---")
+                        st.markdown("**Additional Data**")
+                        st.dataframe(df_below, use_container_width=True, hide_index=True)
                 else:
-                    plot_container.info("📁 Waiting for: Heat map 4.xlsx")
+                    st.info("📁 Waiting for: Heat map 4.xlsx")
             except Exception as e:
-                plot_container.warning(f"Could not load heatmap: {str(e)}")
+                st.warning(f"Could not load heatmap: {str(e)}")
     
     # ==================== Recognition, Societal Impact & Inclusivity ====================
     with sub_tab_b:
@@ -399,49 +558,55 @@ with tab3:
         
         with rsi_tabs[0]:
             st.write("**Recognition, Societal Impact & Inclusivity - KPI by Nr**")
-            plot_container = st.empty()
             try:
                 heatmap_file = os.path.join(root_dir, 'data', 'Heat map 5.xlsx')
                 if os.path.exists(heatmap_file):
-                    fig = create_heatmap_visualization(heatmap_file)
+                    fig, df_below = create_heatmap_visualization(heatmap_file)
                     if fig:
-                        with plot_container.container():
-                            st.plotly_chart(fig, use_container_width=True)
+                        st.plotly_chart(fig, use_container_width=True)
+                    if df_below is not None and not df_below.empty:
+                        st.markdown("---")
+                        st.markdown("**Additional Data**")
+                        st.dataframe(df_below, use_container_width=True, hide_index=True)
                 else:
-                    plot_container.info("📁 Waiting for: Heat map 5.xlsx")
+                    st.info("📁 Waiting for: Heat map 5.xlsx")
             except Exception as e:
-                plot_container.warning(f"Could not load heatmap: {str(e)}")
-        
+                st.warning(f"Could not load heatmap: {str(e)}")
+
         with rsi_tabs[1]:
             st.write("**Recognition, Societal Impact & Inclusivity - KPI by FTE**")
-            plot_container = st.empty()
             try:
                 heatmap_file = os.path.join(root_dir, 'data', 'Heat map 6.xlsx')
                 if os.path.exists(heatmap_file):
-                    fig = create_heatmap_visualization(heatmap_file)
+                    fig, df_below = create_heatmap_visualization(heatmap_file)
                     if fig:
-                        with plot_container.container():
-                            st.plotly_chart(fig, use_container_width=True)
+                        st.plotly_chart(fig, use_container_width=True)
+                    if df_below is not None and not df_below.empty:
+                        st.markdown("---")
+                        st.markdown("**Additional Data**")
+                        st.dataframe(df_below, use_container_width=True, hide_index=True)
                 else:
-                    plot_container.info("📁 Waiting for: Heat map 6.xlsx")
+                    st.info("📁 Waiting for: Heat map 6.xlsx")
             except Exception as e:
-                plot_container.warning(f"Could not load heatmap: {str(e)}")
-        
+                st.warning(f"Could not load heatmap: {str(e)}")
+
         with rsi_tabs[2]:
             st.write("**Recognition, Societal Impact & Inclusivity - KPI by $**")
-            plot_container = st.empty()
             try:
                 heatmap_file = os.path.join(root_dir, 'data', 'Heat map 7.xlsx')
                 if os.path.exists(heatmap_file):
-                    fig = create_heatmap_visualization(heatmap_file)
+                    fig, df_below = create_heatmap_visualization(heatmap_file)
                     if fig:
-                        with plot_container.container():
-                            st.plotly_chart(fig, use_container_width=True)
+                        st.plotly_chart(fig, use_container_width=True)
+                    if df_below is not None and not df_below.empty:
+                        st.markdown("---")
+                        st.markdown("**Additional Data**")
+                        st.dataframe(df_below, use_container_width=True, hide_index=True)
                 else:
-                    plot_container.info("📁 Waiting for: Heat map 7.xlsx")
+                    st.info("📁 Waiting for: Heat map 7.xlsx")
             except Exception as e:
-                plot_container.warning(f"Could not load heatmap: {str(e)}")
-        
+                st.warning(f"Could not load heatmap: {str(e)}")
+
         with rsi_tabs[3]:
             st.write("**Recognition, Societal Impact & Inclusivity - KPI over Time**")
 
