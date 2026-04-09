@@ -235,13 +235,13 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16):
                         fval = float(val) if val is not None else None
                     except:
                         fval = None
-                    # Store None for missing/zero so we can display "NA"
-                    row_data.append(fval if fval else np.nan)
+                    # Store NaN only for truly missing values (None); 0 is a valid value
+                    row_data.append(fval if fval is not None else np.nan)
                     orig_data.append((fval, val))  # keep raw value to detect N/A text
                 data_values.append(row_data)
                 original_values.append(orig_data)
 
-        # Collect rows beyond heatmap_max_row — merged into heatmap as gray rows
+        # Collect rows beyond heatmap_max_row � merged into heatmap as gray rows
         for row_idx in range(heatmap_max_row + 1, ws.max_row + 1):
             program_cell = ws.cell(row=row_idx, column=3).value
             if program_cell is not None and program_cell != "None":
@@ -254,7 +254,7 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16):
                         fval = float(val) if val is not None else None
                     except:
                         fval = None
-                    row_data.append(fval if fval else np.nan)
+                    row_data.append(fval if fval is not None else np.nan)
                     orig_row.append((fval, val))
                 below_data.append(row_data)
                 below_orig.append(orig_row)
@@ -282,7 +282,7 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16):
         # y-axis labels: plain program names only (group shown as side band)
         y_labels = all_programs
 
-        # X-axis: word-wrapped bold labels at -45°
+        # X-axis: word-wrapped bold labels at -45�
         MAX_CHARS = 15  # chars per line before wrapping
         CHAR_PX   = 7   # approx px per char at 10pt font
         def bold_wrap(text):
@@ -292,39 +292,102 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16):
         # Y-axis: word-wrapped bold labels (horizontal)
         y_labels_wrapped = ['<br>'.join(f'<b>{line}</b>' for line in wrap_label(p, max_len=18).split('<br>')) for p in all_programs]
 
+        # Dynamically find the Per Program Target row by searching col A-C for the label
+        per_program_target_row = None
+        for row_idx in range(heatmap_max_row + 1, ws.max_row + 1):
+            for col_idx in range(1, 4):
+                val = ws.cell(row=row_idx, column=col_idx).value
+                if val and 'per program' in str(val).lower():
+                    per_program_target_row = row_idx
+                    break
+            if per_program_target_row:
+                break
+
+        per_program_targets = []
+        if per_program_target_row:
+            for col_idx in range(4, 4 + len(kpi_names)):
+                val = ws.cell(row=per_program_target_row, column=col_idx).value
+                try:
+                    per_program_targets.append(float(val) if val is not None else None)
+                except:
+                    per_program_targets.append(None)
+        else:
+            per_program_targets = [None] * len(kpi_names)
+
         # Create dataframe using all rows
         if all_data_values and len(kpi_names) > 0:
             df_heatmap = pd.DataFrame(all_data_values, columns=kpi_names[:len(all_data_values[0])])
             df_heatmap.index = y_labels
 
-            # Normalize columns using only heatmap rows (rows 1..len(programs)).
-            # Below rows get z=-1 (gray) or NaN (no color for NA).
+            # Normalize using 3-point scale per column:
+            #   min_val (lowest in rows 4-16) -> 0.0 (red)
+            #   midpoint (per_program_target / 2)  -> 0.5 (yellow)
+            #   per_program_target                 -> 1.0 (dark green)
             df_normalized = df_heatmap.copy()
             for col_i, col in enumerate(df_normalized.columns):
-                # Min/max from program rows only (rows 4–heatmap_max_row); same scale applied to below rows
-                hm_floats = pd.Series([row[col_i] for row in all_data_values[:len(programs)]], dtype=float).dropna()
-                min_val = hm_floats.min() if len(hm_floats) else 0
-                max_val = hm_floats.max() if len(hm_floats) else 1
+                # Use orig values (includes 0.0 correctly) to compute min
+                hm_orig_floats = pd.Series(
+                    [all_original_values[r][col_i][0] for r in range(len(programs))
+                     if r < len(all_original_values) and col_i < len(all_original_values[r])
+                     and isinstance(all_original_values[r][col_i], tuple)
+                     and all_original_values[r][col_i][0] is not None],
+                    dtype=float
+                ).dropna()
+                min_val  = hm_orig_floats.min() if len(hm_orig_floats) else 0.0
+                target   = per_program_targets[col_i] if col_i < len(per_program_targets) and per_program_targets[col_i] else None
+                midpoint = target / 2.0 if target else None
                 for r in range(len(all_programs)):
-                    # Rows beyond heatmap_max_row get no color
                     if r >= len(programs):
                         df_normalized.iloc[r, col_i] = np.nan
                         continue
-                    raw = all_data_values[r][col_i]
-                    is_na = raw is None or (isinstance(raw, float) and np.isnan(raw))
+                    orig_item = all_original_values[r][col_i] if r < len(all_original_values) and col_i < len(all_original_values[r]) else (None, None)
+                    orig_fval = orig_item[0] if isinstance(orig_item, tuple) else None
+                    orig_raw  = orig_item[1] if isinstance(orig_item, tuple) else orig_item
+                    is_na_text = isinstance(orig_raw, str) and orig_raw.strip().upper() in ('N/A', 'NA', '#N/A')
+                    is_na = is_na_text or orig_fval is None
                     if is_na:
                         df_normalized.iloc[r, col_i] = np.nan
-                    elif max_val > min_val:
-                        df_normalized.iloc[r, col_i] = max(0.0, min(1.0, (raw - min_val) / (max_val - min_val)))
+                    elif target is None or target == min_val:
+                        # No target defined — numeric values shown as green
+                        df_normalized.iloc[r, col_i] = 1.0
+                    elif orig_fval >= target:
+                        # At or above target → always green (check before min_val)
+                        df_normalized.iloc[r, col_i] = 1.0
+                    elif orig_fval <= min_val:
+                        df_normalized.iloc[r, col_i] = 0.0
+                    elif midpoint and orig_fval <= midpoint:
+                        span = midpoint - min_val
+                        df_normalized.iloc[r, col_i] = 0.5 * (orig_fval - min_val) / span if span > 0 else 0.25
                     else:
-                        df_normalized.iloc[r, col_i] = 0.5
+                        span = target - midpoint
+                        df_normalized.iloc[r, col_i] = 0.5 + 0.5 * (orig_fval - midpoint) / span if span > 0 else 0.75
 
-            # Excel default 3-color scale: red → yellow → green
+            # 3-point colorscale: red → orange/yellow → dark green
             colorscale = [
-                [0.0, '#F8696B'],
-                [0.5, '#FFEB84'],
-                [1.0, '#63BE7B'],
+                [0.0,  '#D73027'],  # dark red  (at min)
+                [0.25, '#F46D43'],  # orange
+                [0.5,  '#FFFF00'],  # yellow (at midpoint = target/2)
+                [0.75, '#A6D96A'],  # light green
+                [1.0,  '#1A7A1A'],  # dark green (at or above per-program target)
             ]
+
+            # Smart numeric formatter — preserves significant figures for small values
+            def fmt_val(v):
+                if v == 0:
+                    return '0'
+                abs_v = abs(v)
+                if abs_v < 0.001:
+                    return f"{v:.3e}"          # e.g. 7.519e-04
+                elif abs_v < 0.01:
+                    return f"{v:.6f}".rstrip('0').rstrip('.')  # e.g. 0.007519
+                elif abs_v < 0.1:
+                    return f"{v:.4f}".rstrip('0').rstrip('.')  # e.g. 0.0752
+                elif abs_v < 1:
+                    return f"{v:.3f}".rstrip('0').rstrip('.')  # e.g. 0.752
+                elif v == int(v):
+                    return str(int(v))                          # e.g. 15
+                else:
+                    return f"{v:.1f}"                          # e.g. 15.5
 
             # Build text display
             text_display = []
@@ -340,7 +403,7 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16):
                     elif fval is None or is_na_text:
                         text_row.append('NA')
                     else:
-                        text_row.append(str(round(fval, 1)))
+                        text_row.append(fmt_val(fval))
                 text_display.append(text_row)
 
             fig = px.imshow(
@@ -364,22 +427,23 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16):
                 ygap=2
             )
 
-            # LABEL_PX: at -45° with wrapped labels, project max lines * line_height * sin(45°)
-            LINE_H_PX = 14  # approx line height in px at 10pt
+            # LABEL_PX: at -45� with wrapped labels, project max lines * line_height * sin(45�)
+            LINE_H_PX = 12  # approx line height in px at 9pt
             max_lines = max((len(t.split('<br>')) for t in kpi_tick_names), default=1)
             longest_line = max((len(line.replace('<b>','').replace('</b>','')) for t in kpi_tick_names for line in t.split('<br>')), default=10)
-            LABEL_PX = max(80, int((longest_line * CHAR_PX + max_lines * LINE_H_PX) * 0.71) + 20)
-            BAND_PX  = 45
-            dynamic_top = LABEL_PX + BAND_PX
-            row_px = 32
-            col_px = 65  # wide enough for wrapped diagonal labels
-            LEFT_M = 500
-            RIGHT_M = 40
-            chart_height = dynamic_top + 60 + len(all_programs) * row_px
+            LABEL_PX = max(60, int((longest_line * CHAR_PX + max_lines * LINE_H_PX) * 0.71) + 10)
+            BAND_PX  = 30
+            GAP_PX   = 20  # extra space between tick labels and group bands
+            dynamic_top = LABEL_PX + GAP_PX + BAND_PX
+            row_px = 22  # compact rows to fit on screen
+            col_px = 80  # wide enough so diagonal labels don't override each other
+            LEFT_M = 300
+            RIGHT_M = 20
+            chart_height = dynamic_top + 40 + len(all_programs) * row_px
             chart_width  = LEFT_M + RIGHT_M + len(kpi_names) * col_px
 
             # Group bands sit just above the tick labels in paper coords
-            band_y0 = 1.0 + LABEL_PX / chart_height + 0.01
+            band_y0 = 1.0 + (LABEL_PX + GAP_PX) / chart_height + 0.01
             band_y1 = band_y0 + BAND_PX / chart_height
             band_label_y = (band_y0 + band_y1) / 2
 
@@ -394,14 +458,14 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16):
                     tickmode='array',
                     tickvals=kpi_names,
                     ticktext=kpi_tick_names,
-                    tickfont=dict(size=10),
+                    tickfont=dict(size=9),
                     automargin=False,
                     showgrid=False,
                     zeroline=False,
                     showline=False,
                 ),
                 yaxis=dict(
-                    tickfont=dict(size=10),
+                    tickfont=dict(size=9),
                     tickmode='array',
                     tickvals=all_programs,
                     ticktext=y_labels_wrapped,
@@ -412,7 +476,7 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16):
                 ),
                 yaxis_title="",
                 title="",
-                margin=dict(l=LEFT_M, r=RIGHT_M, t=dynamic_top, b=60),
+                margin=dict(l=LEFT_M, r=RIGHT_M, t=dynamic_top, b=20),
                 coloraxis_showscale=False
             )
 
@@ -459,7 +523,7 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16):
                 fig.add_shape(
                     type='rect',
                     xref='paper', yref='y',
-                    x0=-0.42, x1=-0.28,
+                    x0=-0.32, x1=-0.20,
                     y0=start_idx - 0.5, y1=end_idx + 0.5,
                     fillcolor=color,
                     line=dict(color='white', width=1),
@@ -467,7 +531,7 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16):
                 )
                 fig.add_annotation(
                     xref='paper', yref='y',
-                    x=-0.35, y=y_center,
+                    x=-0.26, y=y_center,
                     text=f"<b>{group_name}</b>",
                     showarrow=False,
                     font=dict(color='white', size=10),
@@ -476,13 +540,25 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16):
                     bgcolor='rgba(0,0,0,0)'
                 )
 
-            return fig, df_below
+            # Build raw verification DataFrame (what was read from Excel)
+            raw_display_rows = []
+            for r, prog in enumerate(all_programs):
+                row_dict = {'Program': prog}
+                for col_i, kpi in enumerate(kpi_names):
+                    if r < len(text_display) and col_i < len(text_display[r]):
+                        row_dict[kpi] = text_display[r][col_i]
+                    else:
+                        row_dict[kpi] = 'NA'
+                raw_display_rows.append(row_dict)
+            df_raw = pd.DataFrame(raw_display_rows).set_index('Program') if raw_display_rows else None
+
+            return fig, df_below, df_raw
         else:
             st.error(f"No data found. Programs: {len(programs)}, KPIs: {len(kpi_names)}")
-            return None, None
+            return None, None, None
     except Exception as e:
         st.error(f"Error creating heatmap: {str(e)}")
-        return None, None
+        return None, None, None
 
 # Helper: render a dataframe as a gray-styled HTML table
 def render_gray_table(df):
@@ -578,13 +654,17 @@ with tab3:
             try:
                 heatmap_file = os.path.join(root_dir, 'data', 'Heat map 1.xlsx')
                 if os.path.exists(heatmap_file):
-                    fig, df_below = create_heatmap_visualization(heatmap_file)
+                    fig, df_below, df_raw = create_heatmap_visualization(heatmap_file)
                     if fig:
-                        st.plotly_chart(fig, use_container_width=False)
+                        st.caption(f"📄 Source: {os.path.basename(heatmap_file)} ({heatmap_file})")
+                        st.plotly_chart(fig, use_container_width=False, config={'scrollZoom': False})
                     if df_below is not None and not df_below.empty:
                         st.markdown("---")
                         st.markdown("**Additional Data**")
                         render_gray_table(df_below)
+                    if df_raw is not None:
+                        with st.expander("🔍 Raw Excel Data (verification)"):
+                            st.dataframe(df_raw, use_container_width=True)
                 else:
                     st.info("📁 Waiting for: Heat map 1.xlsx")
             except Exception as e:
@@ -595,13 +675,17 @@ with tab3:
             try:
                 heatmap_file = os.path.join(root_dir, 'data', 'Heat map 2.xlsx')
                 if os.path.exists(heatmap_file):
-                    fig, df_below = create_heatmap_visualization(heatmap_file)
+                    fig, df_below, df_raw = create_heatmap_visualization(heatmap_file)
                     if fig:
-                        st.plotly_chart(fig, use_container_width=False)
+                        st.caption(f"📄 Source: {os.path.basename(heatmap_file)} ({heatmap_file})")
+                        st.plotly_chart(fig, use_container_width=False, config={'scrollZoom': False})
                     if df_below is not None and not df_below.empty:
                         st.markdown("---")
                         st.markdown("**Additional Data**")
                         render_gray_table(df_below)
+                    if df_raw is not None:
+                        with st.expander("🔍 Raw Excel Data (verification)"):
+                            st.dataframe(df_raw, use_container_width=True)
                 else:
                     st.info("📁 Waiting for: Heat map 2.xlsx")
             except Exception as e:
@@ -612,13 +696,17 @@ with tab3:
             try:
                 heatmap_file = os.path.join(root_dir, 'data', 'Heat map 3.xlsx')
                 if os.path.exists(heatmap_file):
-                    fig, df_below = create_heatmap_visualization(heatmap_file)
+                    fig, df_below, df_raw = create_heatmap_visualization(heatmap_file)
                     if fig:
-                        st.plotly_chart(fig, use_container_width=False)
+                        st.caption(f"📄 Source: {os.path.basename(heatmap_file)} ({heatmap_file})")
+                        st.plotly_chart(fig, use_container_width=False, config={'scrollZoom': False})
                     if df_below is not None and not df_below.empty:
                         st.markdown("---")
                         st.markdown("**Additional Data**")
                         render_gray_table(df_below)
+                    if df_raw is not None:
+                        with st.expander("🔍 Raw Excel Data (verification)"):
+                            st.dataframe(df_raw, use_container_width=True)
                 else:
                     st.info("📁 Waiting for: Heat map 3.xlsx")
             except Exception as e:
@@ -629,13 +717,17 @@ with tab3:
             try:
                 heatmap_file = os.path.join(root_dir, 'data', 'Heat map 4.xlsx')
                 if os.path.exists(heatmap_file):
-                    fig, df_below = create_heatmap_visualization(heatmap_file)
+                    fig, df_below, df_raw = create_heatmap_visualization(heatmap_file)
                     if fig:
-                        st.plotly_chart(fig, use_container_width=False)
+                        st.caption(f"📄 Source: {os.path.basename(heatmap_file)} ({heatmap_file})")
+                        st.plotly_chart(fig, use_container_width=False, config={'scrollZoom': False})
                     if df_below is not None and not df_below.empty:
                         st.markdown("---")
                         st.markdown("**Additional Data**")
                         render_gray_table(df_below)
+                    if df_raw is not None:
+                        with st.expander("🔍 Raw Excel Data (verification)"):
+                            st.dataframe(df_raw, use_container_width=True)
                 else:
                     st.info("📁 Waiting for: Heat map 4.xlsx")
             except Exception as e:
@@ -654,13 +746,17 @@ with tab3:
             try:
                 heatmap_file = os.path.join(root_dir, 'data', 'Heat map 5.xlsx')
                 if os.path.exists(heatmap_file):
-                    fig, df_below = create_heatmap_visualization(heatmap_file)
+                    fig, df_below, df_raw = create_heatmap_visualization(heatmap_file)
                     if fig:
-                        st.plotly_chart(fig, use_container_width=False)
+                        st.caption(f"📄 Source: {os.path.basename(heatmap_file)} ({heatmap_file})")
+                        st.plotly_chart(fig, use_container_width=False, config={'scrollZoom': False})
                     if df_below is not None and not df_below.empty:
                         st.markdown("---")
                         st.markdown("**Additional Data**")
                         render_gray_table(df_below)
+                    if df_raw is not None:
+                        with st.expander("🔍 Raw Excel Data (verification)"):
+                            st.dataframe(df_raw, use_container_width=True)
                 else:
                     st.info("📁 Waiting for: Heat map 5.xlsx")
             except Exception as e:
@@ -671,13 +767,17 @@ with tab3:
             try:
                 heatmap_file = os.path.join(root_dir, 'data', 'Heat map 6.xlsx')
                 if os.path.exists(heatmap_file):
-                    fig, df_below = create_heatmap_visualization(heatmap_file)
+                    fig, df_below, df_raw = create_heatmap_visualization(heatmap_file)
                     if fig:
-                        st.plotly_chart(fig, use_container_width=False)
+                        st.caption(f"📄 Source: {os.path.basename(heatmap_file)} ({heatmap_file})")
+                        st.plotly_chart(fig, use_container_width=False, config={'scrollZoom': False})
                     if df_below is not None and not df_below.empty:
                         st.markdown("---")
                         st.markdown("**Additional Data**")
                         render_gray_table(df_below)
+                    if df_raw is not None:
+                        with st.expander("🔍 Raw Excel Data (verification)"):
+                            st.dataframe(df_raw, use_container_width=True)
                 else:
                     st.info("📁 Waiting for: Heat map 6.xlsx")
             except Exception as e:
@@ -688,13 +788,17 @@ with tab3:
             try:
                 heatmap_file = os.path.join(root_dir, 'data', 'Heat map 7.xlsx')
                 if os.path.exists(heatmap_file):
-                    fig, df_below = create_heatmap_visualization(heatmap_file)
+                    fig, df_below, df_raw = create_heatmap_visualization(heatmap_file)
                     if fig:
-                        st.plotly_chart(fig, use_container_width=False)
+                        st.caption(f"📄 Source: {os.path.basename(heatmap_file)} ({heatmap_file})")
+                        st.plotly_chart(fig, use_container_width=False, config={'scrollZoom': False})
                     if df_below is not None and not df_below.empty:
                         st.markdown("---")
                         st.markdown("**Additional Data**")
                         render_gray_table(df_below)
+                    if df_raw is not None:
+                        with st.expander("🔍 Raw Excel Data (verification)"):
+                            st.dataframe(df_raw, use_container_width=True)
                 else:
                     st.info("📁 Waiting for: Heat map 7.xlsx")
             except Exception as e:
