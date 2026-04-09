@@ -149,7 +149,11 @@ def excel_to_html_with_merged_cells(excel_file_path):
 
 # Function to create heatmap from KPI heat map file
 # Returns (fig, df_below) where df_below contains rows beyond row 16 (or None)
-def create_heatmap_visualization(excel_file_path, heatmap_max_row=16):
+def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
+                                  data_col_start=4, program_col=3, group_col=2,
+                                  kpi_row=3, kpi_group_row=2, data_row_start=4,
+                                  show_row_groups=True, include_below_rows=True,
+                                  left_margin=None):
     try:
         # Load with openpyxl to get clean numeric data
         wb = openpyxl.load_workbook(excel_file_path, data_only=True)
@@ -167,25 +171,26 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16):
         below_data = []
         below_orig = []
 
-        # Build program-group map from column B (fill-forward for merged cells)
+        # Build program-group map from group_col (fill-forward for merged cells)
         current_b = None
         b_values = {}
-        for row_idx in range(4, ws.max_row + 1):
-            val = ws.cell(row=row_idx, column=2).value
-            if val is not None:
-                current_b = str(val)
-            b_values[row_idx] = current_b
+        if group_col is not None:
+            for row_idx in range(data_row_start, ws.max_row + 1):
+                val = ws.cell(row=row_idx, column=group_col).value
+                if val is not None:
+                    current_b = str(val)
+                b_values[row_idx] = current_b
 
-        # Get KPI names from row 3 (starting from column D=4)
-        for col_idx in range(4, ws.max_column + 1):
-            cell_val = ws.cell(row=3, column=col_idx).value
+        # Get KPI names from kpi_row (starting from data_col_start)
+        for col_idx in range(data_col_start, ws.max_column + 1):
+            cell_val = ws.cell(row=kpi_row, column=col_idx).value
             if cell_val is not None:
                 kpi_names.append(str(cell_val))
 
-        # Get KPI type groups from row 2 (fill-forward for merged cells)
+        # Get KPI type groups from kpi_group_row (fill-forward for merged cells)
         current_type = None
-        for col_idx in range(4, 4 + len(kpi_names)):
-            val = ws.cell(row=2, column=col_idx).value
+        for col_idx in range(data_col_start, data_col_start + len(kpi_names)):
+            val = ws.cell(row=kpi_group_row, column=col_idx).value
             if val is not None:
                 current_type = str(val)
             kpi_type_groups.append(current_type or "")
@@ -221,15 +226,15 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16):
                     span_start = i
             kpi_type_spans.append((span_name, span_start, len(kpi_type_groups) - 1))
 
-        # Get data from rows 4 to heatmap_max_row for the heatmap
-        for row_idx in range(4, heatmap_max_row + 1):
-            program_cell = ws.cell(row=row_idx, column=3).value
+        # Get data from data_row_start to heatmap_max_row for the heatmap
+        for row_idx in range(data_row_start, heatmap_max_row + 1):
+            program_cell = ws.cell(row=row_idx, column=program_col).value
             if program_cell is not None and program_cell != "None":
                 programs.append(str(program_cell))
-                program_groups.append(b_values.get(row_idx) or "")
+                program_groups.append(b_values.get(row_idx) or "" if group_col is not None else "")
                 row_data = []
                 orig_data = []  # stores (fval, raw_val) tuples
-                for col_idx in range(4, 4 + len(kpi_names)):
+                for col_idx in range(data_col_start, data_col_start + len(kpi_names)):
                     val = ws.cell(row=row_idx, column=col_idx).value
                     try:
                         fval = float(val) if val is not None else None
@@ -241,23 +246,24 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16):
                 data_values.append(row_data)
                 original_values.append(orig_data)
 
-        # Collect rows beyond heatmap_max_row � merged into heatmap as gray rows
-        for row_idx in range(heatmap_max_row + 1, ws.max_row + 1):
-            program_cell = ws.cell(row=row_idx, column=3).value
-            if program_cell is not None and program_cell != "None":
-                below_programs.append(str(program_cell))
-                row_data = []
-                orig_row = []  # stores (fval, raw_val) tuples
-                for col_idx in range(4, 4 + len(kpi_names)):
-                    val = ws.cell(row=row_idx, column=col_idx).value
-                    try:
-                        fval = float(val) if val is not None else None
-                    except:
-                        fval = None
-                    row_data.append(fval if fval is not None else np.nan)
-                    orig_row.append((fval, val))
-                below_data.append(row_data)
-                below_orig.append(orig_row)
+        # Collect rows beyond heatmap_max_row — merged into heatmap as gray rows
+        if include_below_rows:
+            for row_idx in range(heatmap_max_row + 1, ws.max_row + 1):
+                program_cell = ws.cell(row=row_idx, column=program_col).value
+                if program_cell is not None and program_cell != "None":
+                    below_programs.append(str(program_cell))
+                    row_data = []
+                    orig_row = []  # stores (fval, raw_val) tuples
+                    for col_idx in range(data_col_start, data_col_start + len(kpi_names)):
+                        val = ws.cell(row=row_idx, column=col_idx).value
+                        try:
+                            fval = float(val) if val is not None else None
+                        except:
+                            fval = None
+                        row_data.append(fval if fval is not None else np.nan)
+                        orig_row.append((fval, val))
+                    below_data.append(row_data)
+                    below_orig.append(orig_row)
 
         df_below = None  # no separate table
 
@@ -269,7 +275,7 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16):
 
         # Compute program group spans for left-side bands
         program_group_spans = []
-        if all_program_groups:
+        if show_row_groups and all_program_groups:
             span_start = 0
             span_name = all_program_groups[0]
             for i, grp in enumerate(all_program_groups[1:], 1):
@@ -292,10 +298,10 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16):
         # Y-axis: word-wrapped bold labels (horizontal)
         y_labels_wrapped = ['<br>'.join(f'<b>{line}</b>' for line in wrap_label(p, max_len=18).split('<br>')) for p in all_programs]
 
-        # Dynamically find the Per Program Target row by searching col A-C for the label
+        # Dynamically find the Per Program Target row by searching col 1 to program_col for the label
         per_program_target_row = None
         for row_idx in range(heatmap_max_row + 1, ws.max_row + 1):
-            for col_idx in range(1, 4):
+            for col_idx in range(1, (program_col or 3) + 1):
                 val = ws.cell(row=row_idx, column=col_idx).value
                 if val and 'per program' in str(val).lower():
                     per_program_target_row = row_idx
@@ -305,7 +311,7 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16):
 
         per_program_targets = []
         if per_program_target_row:
-            for col_idx in range(4, 4 + len(kpi_names)):
+            for col_idx in range(data_col_start, data_col_start + len(kpi_names)):
                 val = ws.cell(row=per_program_target_row, column=col_idx).value
                 try:
                     per_program_targets.append(float(val) if val is not None else None)
@@ -313,6 +319,36 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16):
                     per_program_targets.append(None)
         else:
             per_program_targets = [None] * len(kpi_names)
+
+        # Fallback: if Per Program target cells are empty (e.g. uncached formulas),
+        # compute from Annual Target row divided by number of heatmap programs
+        if all(t is None for t in per_program_targets) and len(programs) > 0:
+            annual_target_row = None
+            for row_idx in range(heatmap_max_row + 1, ws.max_row + 1):
+                for col_idx in range(1, (program_col or 3) + 1):
+                    val = ws.cell(row=row_idx, column=col_idx).value
+                    if val and 'annual target' in str(val).lower():
+                        annual_target_row = row_idx
+                        break
+                if annual_target_row:
+                    break
+            if annual_target_row:
+                n = len(programs)
+                per_program_targets = []
+                for col_idx in range(data_col_start, data_col_start + len(kpi_names)):
+                    val = ws.cell(row=annual_target_row, column=col_idx).value
+                    try:
+                        annl = float(val) if val is not None else None
+                        per_program_targets.append(annl / n if annl is not None and n > 0 else None)
+                    except:
+                        per_program_targets.append(None)
+                # Patch below_orig so display row shows computed values not NA
+                for bi, prog in enumerate(below_programs):
+                    if 'per program' in prog.lower():
+                        below_orig[bi] = [(t, t) for t in per_program_targets]
+                        break
+                # Re-merge after patch
+                all_original_values = original_values + below_orig
 
         # Create dataframe using all rows
         if all_data_values and len(kpi_names) > 0:
@@ -431,13 +467,21 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16):
             LINE_H_PX = 12  # approx line height in px at 9pt
             max_lines = max((len(t.split('<br>')) for t in kpi_tick_names), default=1)
             longest_line = max((len(line.replace('<b>','').replace('</b>','')) for t in kpi_tick_names for line in t.split('<br>')), default=10)
-            LABEL_PX = max(60, int((longest_line * CHAR_PX + max_lines * LINE_H_PX) * 0.71) + 10)
+            # Auto-detect short labels (e.g. years) vs long KPI names
+            short_labels = longest_line <= 6 and max_lines == 1
+            if short_labels:
+                LABEL_PX = 30
+                tick_angle = 0
+                col_px = 35
+            else:
+                LABEL_PX = max(60, int((longest_line * CHAR_PX + max_lines * LINE_H_PX) * 0.71) + 10)
+                tick_angle = -45
+                col_px = 80  # wide enough so diagonal labels don't override each other
             BAND_PX  = 30
-            GAP_PX   = 5  # extra space between tick labels and group bands
+            GAP_PX   = 8 if short_labels else 0  # extra space between tick labels and group bands
             dynamic_top = LABEL_PX + GAP_PX + BAND_PX
             row_px = 22  # compact rows to fit on screen
-            col_px = 80  # wide enough so diagonal labels don't override each other
-            LEFT_M = 300
+            LEFT_M = left_margin if left_margin is not None else (250 if show_row_groups else 180)
             RIGHT_M = 20
             BOTTOM_M = 20
             chart_height = dynamic_top + 40 + len(all_programs) * row_px
@@ -455,13 +499,14 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16):
                 height=chart_height,
                 width=chart_width,
                 xaxis=dict(
+                    type='category',
                     side='top',
-                    tickangle=-45,
+                    tickangle=tick_angle,
                     title='',
                     tickmode='array',
                     tickvals=kpi_names,
                     ticktext=kpi_tick_names,
-                    tickfont=dict(size=9),
+                    tickfont=dict(size=10 if short_labels else 9),
                     automargin=False,
                     showgrid=False,
                     zeroline=False,
@@ -510,38 +555,41 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16):
                     x=x_center, y=band_label_y,
                     text=f"<b>{group_name}</b>",
                     showarrow=False,
-                    font=dict(color='white', size=10),
+                    font=dict(color='white', size=11, family='Arial Black, Arial, sans-serif'),
                     align='center',
+                    xanchor='center',
+                    yanchor='middle',
                     bgcolor='rgba(0,0,0,0)'
                 )
 
             # Add program group bands to the LEFT of the y-axis (mirrors top KPI-type bands)
-            for idx, (group_name, start_idx, end_idx) in enumerate(program_group_spans):
-                # Skip bands that are entirely beyond the main heatmap rows or have no group name
-                if start_idx >= len(programs) or not group_name:
-                    continue
-                end_idx = min(end_idx, len(programs) - 1)
-                color = left_group_colors[idx % len(left_group_colors)]
-                y_center = (start_idx + end_idx) / 2
-                fig.add_shape(
-                    type='rect',
-                    xref='paper', yref='y',
-                    x0=-0.32, x1=-0.20,
-                    y0=start_idx - 0.5, y1=end_idx + 0.5,
-                    fillcolor=color,
-                    line=dict(color='white', width=1),
-                    layer='above'
-                )
-                fig.add_annotation(
-                    xref='paper', yref='y',
-                    x=-0.26, y=y_center,
-                    text=f"<b>{group_name}</b>",
-                    showarrow=False,
-                    font=dict(color='white', size=10),
-                    align='center',
-                    textangle=-90,
-                    bgcolor='rgba(0,0,0,0)'
-                )
+            if show_row_groups:
+                for idx, (group_name, start_idx, end_idx) in enumerate(program_group_spans):
+                    # Skip bands that are entirely beyond the main heatmap rows or have no group name
+                    if start_idx >= len(programs) or not group_name:
+                        continue
+                    end_idx = min(end_idx, len(programs) - 1)
+                    color = left_group_colors[idx % len(left_group_colors)]
+                    y_center = (start_idx + end_idx) / 2
+                    fig.add_shape(
+                        type='rect',
+                        xref='paper', yref='y',
+                        x0=-0.24, x1=-0.12,
+                        y0=start_idx - 0.5, y1=end_idx + 0.5,
+                        fillcolor=color,
+                        line=dict(color='white', width=1),
+                        layer='above'
+                    )
+                    fig.add_annotation(
+                        xref='paper', yref='y',
+                        x=-0.18, y=y_center,
+                        text=f"<b>{group_name}</b>",
+                        showarrow=False,
+                        font=dict(color='white', size=10),
+                        align='center',
+                        textangle=-90,
+                        bgcolor='rgba(0,0,0,0)'
+                    )
 
             # Build raw verification DataFrame (what was read from Excel)
             raw_display_rows = []
@@ -708,7 +756,14 @@ with tab3:
             try:
                 heatmap_file = os.path.join(root_dir, 'data', 'Heat map 4.xlsx')
                 if os.path.exists(heatmap_file):
-                    fig, df_below, df_raw = create_heatmap_visualization(heatmap_file)
+                    fig, df_below, df_raw = create_heatmap_visualization(
+                        heatmap_file,
+                        heatmap_max_row=15,
+                        data_col_start=3, program_col=2, group_col=None,
+                        kpi_row=2, kpi_group_row=1, data_row_start=3,
+                        show_row_groups=False, include_below_rows=True,
+                        left_margin=300
+                    )
                     if fig:
                         st.plotly_chart(fig, use_container_width=False, config={'scrollZoom': False})
                     if df_below is not None and not df_below.empty:
