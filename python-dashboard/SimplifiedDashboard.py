@@ -606,7 +606,7 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                         x=-0.18, y=y_center,
                         text=f"<b>{group_name}</b>",
                         showarrow=False,
-                        font=dict(color='black', size=13),
+                        font=dict(color='black', size=14, family='Arial Black, Arial, sans-serif'),
                         align='center',
                         textangle=-90,
                         bgcolor='rgba(0,0,0,0)'
