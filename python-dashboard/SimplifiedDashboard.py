@@ -40,7 +40,7 @@ def load_kpi_data():
     return df_programs, df_services, df_heatmap
 
 # Function to convert Excel with merged cells to HTML
-def excel_to_html_with_merged_cells(excel_file_path):
+def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False):
     # Load workbook with data_only=True to get calculated values instead of formulas
     wb_data = openpyxl.load_workbook(excel_file_path, data_only=True)
     ws_data = wb_data.active
@@ -128,9 +128,19 @@ def excel_to_html_with_merged_cells(excel_file_path):
                 if isinstance(cell_value, (int, float)):
                     # Check if the cell has percentage format
                     if cell_format.number_format and '%' in cell_format.number_format:
-                        cell_value = f"{cell_value * 100:.2f}%"
+                        if no_decimals:
+                            cell_value = f"{cell_value * 100:.0f}%"
+                        else:
+                            cell_value = f"{cell_value * 100:.2f}%"
                     else:
-                        cell_value = str(cell_value)
+                        if no_decimals:
+                            # Round to nearest integer and show without decimals
+                            try:
+                                cell_value = f"{int(round(cell_value))}"
+                            except Exception:
+                                cell_value = str(cell_value)
+                        else:
+                            cell_value = str(cell_value)
                 else:
                     cell_value = str(cell_value)
             else:
@@ -458,7 +468,7 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
             fig.update_traces(
                 text=np.array(text_display, dtype=object),
                 texttemplate='%{text}',
-                textfont=dict(size=9, color='black'),
+                textfont=dict(size=16, color='black'),
                 xgap=2,
                 ygap=2
             )
@@ -541,13 +551,14 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
             for idx, (group_name, start_idx, end_idx) in enumerate(kpi_type_spans):
                 color = top_group_colors[idx % len(top_group_colors)]
                 x_center = (start_idx + end_idx) / 2
+                # Top group: no fill, larger black label
                 fig.add_shape(
                     type='rect',
                     xref='x', yref='paper',
                     x0=start_idx - 0.5, x1=end_idx + 0.5,
                     y0=band_y0, y1=band_y1,
-                    fillcolor=color,
-                    line=dict(color='white', width=1),
+                    fillcolor='rgba(0,0,0,0)',
+                    line=dict(color='rgba(0,0,0,0)', width=0),
                     layer='above'
                 )
                 fig.add_annotation(
@@ -555,11 +566,20 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                     x=x_center, y=band_label_y,
                     text=f"<b>{group_name}</b>",
                     showarrow=False,
-                    font=dict(color='white', size=11, family='Arial Black, Arial, sans-serif'),
+                    font=dict(color='black', size=14, family='Arial Black, Arial, sans-serif'),
                     align='center',
                     xanchor='center',
                     yanchor='middle',
                     bgcolor='rgba(0,0,0,0)'
+                )
+                # Add a thick black vertical line at the end of this column group
+                fig.add_shape(
+                    type='line',
+                    xref='x', yref='y',
+                    x0=end_idx + 0.5, x1=end_idx + 0.5,
+                    y0=-0.5, y1=len(all_programs) - 0.5,
+                    line=dict(color='black', width=3),
+                    layer='above'
                 )
 
             # Add program group bands to the LEFT of the y-axis (mirrors top KPI-type bands)
@@ -571,13 +591,14 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                     end_idx = min(end_idx, len(programs) - 1)
                     color = left_group_colors[idx % len(left_group_colors)]
                     y_center = (start_idx + end_idx) / 2
+                    # Left group: no fill, larger black rotated label
                     fig.add_shape(
                         type='rect',
                         xref='paper', yref='y',
                         x0=-0.24, x1=-0.12,
                         y0=start_idx - 0.5, y1=end_idx + 0.5,
-                        fillcolor=color,
-                        line=dict(color='white', width=1),
+                        fillcolor='rgba(0,0,0,0)',
+                        line=dict(color='rgba(0,0,0,0)', width=0),
                         layer='above'
                     )
                     fig.add_annotation(
@@ -585,10 +606,19 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                         x=-0.18, y=y_center,
                         text=f"<b>{group_name}</b>",
                         showarrow=False,
-                        font=dict(color='white', size=10),
+                        font=dict(color='black', size=13),
                         align='center',
                         textangle=-90,
                         bgcolor='rgba(0,0,0,0)'
+                    )
+                    # Add a thick black horizontal line at the end of this row group
+                    fig.add_shape(
+                        type='line',
+                        xref='x', yref='y',
+                        x0=-0.5, x1=len(kpi_names) - 0.5,
+                        y0=end_idx + 0.5, y1=end_idx + 0.5,
+                        line=dict(color='black', width=3),
+                        layer='above'
                     )
 
             # Build raw verification DataFrame (what was read from Excel)
@@ -638,56 +668,38 @@ def render_gray_table(df):
 df_programs, df_services, df_heatmap = load_kpi_data()
 
 # Tabs
-tab1, tab2, tab3 = st.tabs(["📊 Program Output KPIs", "🏢 Service Unit KPIs", "🌡️ KPI By Program"])
+tab1, tab2, tab3 = st.tabs(["📊 2025 Program Output KPIs (Aggregate)", "🌡️ 2025 Program Output KPI (by Program)", "🏢 2025 Service Unit KPIs"])
 
 # Programs Tab
 with tab1:
-    st.subheader("📊 Program Output KPIs")
+    st.subheader("📊 2025 Program Output KPIs (Aggregate)")
     
     root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     program_file = os.path.join(root_dir, 'data', 'Program Output KPIs.xlsx')
     
     try:
-        html_programs = excel_to_html_with_merged_cells(program_file)
+        html_programs = excel_to_html_with_merged_cells(program_file, no_decimals=True)
         st.markdown(html_programs, unsafe_allow_html=True)
     except Exception as e:
         st.warning(f"Could not render with merged cells: {str(e)}")
-        st.dataframe(df_programs, width='stretch', height=600)
+        # Fallback: format numeric columns to have no decimals and convert to strings
+        display_df = df_programs.copy()
+        for col in display_df.select_dtypes(include=["number"]).columns:
+            display_df[col] = display_df[col].apply(lambda x: "" if pd.isna(x) else str(int(round(x))))
+        st.dataframe(display_df, width='stretch', height=600)
     
     # Download button
     csv_programs = df_programs.to_csv(index=False)
     st.download_button(
-        label="⬇️ Download Program KPIs as CSV",
+        label="⬇️ Download 2025 Program KPIs as CSV",
         data=csv_programs,
-        file_name="Program_Output_KPIs.csv",
+        file_name="2025_Program_Output_KPIs.csv",
         mime="text/csv"
     )
 
-# Service Units Tab
+# KPI By Program Tab (now second)
 with tab2:
-    st.subheader("🏢 Service Unit Output KPIs")
-    
-    root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    service_file = os.path.join(root_dir, 'data', 'Service Unit KPIs.xlsx')
-    
-    try:
-        html_services = excel_to_html_with_merged_cells(service_file)
-        st.markdown(html_services, unsafe_allow_html=True)
-    except Exception as e:
-        st.warning(f"Could not render with merged cells: {str(e)}")
-        st.dataframe(df_services, width='stretch', height=600)
-    # Download button
-    csv_services = df_services.to_csv(index=False)
-    st.download_button(
-        label="⬇️ Download Service Unit KPIs as CSV",
-        data=csv_services,
-        file_name="Service_Unit_KPIs.csv",
-        mime="text/csv"
-    )
-
-# KPI By Program Tab
-with tab3:
-    st.subheader("🌡️ KPI By Program")
+    st.subheader("🌡️ 2025 Program Output KPI (by Program)")
     
     # Two main sub-tabs
     sub_tab_a, sub_tab_b = st.tabs(["🔬 Research, Training, Product Development", "🏆 Recognition, Societal Impact & Inclusivity"])
@@ -836,6 +848,32 @@ with tab3:
 
         with rsi_tabs[3]:
             st.write("**Recognition, Societal Impact & Inclusivity - KPI over Time**")
+
+# Service Units Tab (now third)
+with tab3:
+    st.subheader("🏢 2025 Service Unit KPIs")
+    
+    root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    service_file = os.path.join(root_dir, 'data', 'Service Unit KPIs.xlsx')
+    
+    try:
+        html_services = excel_to_html_with_merged_cells(service_file, no_decimals=True)
+        st.markdown(html_services, unsafe_allow_html=True)
+    except Exception as e:
+        st.warning(f"Could not render with merged cells: {str(e)}")
+        # Fallback: format numeric columns to have no decimals and convert to strings
+        display_df_s = df_services.copy()
+        for col in display_df_s.select_dtypes(include=["number"]).columns:
+            display_df_s[col] = display_df_s[col].apply(lambda x: "" if pd.isna(x) else str(int(round(x))))
+        st.dataframe(display_df_s, width='stretch', height=600)
+    # Download button
+    csv_services = df_services.to_csv(index=False)
+    st.download_button(
+        label="⬇️ Download 2025 Service Unit KPIs as CSV",
+        data=csv_services,
+        file_name="2025_Service_Unit_KPIs.csv",
+        mime="text/csv"
+    )
 
 st.markdown("---")
 st.caption("Last updated: April 8, 2026 | IITA KPI Dashboard")
