@@ -136,16 +136,16 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False):
                         if no_decimals:
                             # Round to nearest integer and show without decimals
                             try:
-                                cell_value = f"{int(round(cell_value))}"
+                                cell_value = f"{int(round(cell_value)):,}"
                             except Exception:
                                 cell_value = str(cell_value)
                         else:
-                            # Up to 3 decimal places; strip trailing zeros
+                            # Up to 3 decimal places; strip trailing zeros; add thousand commas
                             try:
                                 if cell_value == int(cell_value):
-                                    cell_value = str(int(cell_value))
+                                    cell_value = f"{int(cell_value):,}"
                                 else:
-                                    cell_value = f"{cell_value:.3f}".rstrip('0').rstrip('.')
+                                    cell_value = f"{cell_value:,.3f}".rstrip('0').rstrip('.')
                             except Exception:
                                 cell_value = str(cell_value)
                 else:
@@ -270,6 +270,25 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                     span_start = i
             kpi_type_spans.append((span_name, span_start, len(kpi_type_groups) - 1))
 
+        # Build set of column indices whose KPI header contains '%'.
+        # openpyxl returns percentage-formatted cells as decimals (e.g. 0.85 for 85%);
+        # multiply by 100 so values display as the user entered them in Excel.
+        # A column is treated as percentage if:
+        #   (a) its KPI header name contains '%', OR
+        #   (b) any data cell in that column has a percentage Excel number format.
+        # openpyxl stores percentage values as decimals (1.0 = 100%); we multiply by 100.
+        pct_col_indices = set()
+        for i, (col_idx, name) in enumerate(zip(included_cols, kpi_names)):
+            if '%' in name:
+                pct_col_indices.add(col_idx)
+            else:
+                # Scan first few data rows for a % number format on that column
+                for scan_row in range(data_row_start, min(data_row_start + 5, ws.max_row + 1)):
+                    cell = ws.cell(row=scan_row, column=col_idx)
+                    if cell.value is not None and cell.number_format and '%' in cell.number_format:
+                        pct_col_indices.add(col_idx)
+                        break
+
         # Get data from data_row_start to heatmap_max_row for the heatmap
         for row_idx in range(data_row_start, heatmap_max_row + 1):
             program_cell = ws.cell(row=row_idx, column=program_col).value
@@ -282,6 +301,9 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                     val = ws.cell(row=row_idx, column=col_idx).value
                     try:
                         fval = float(val) if val is not None else None
+                        if fval is not None and col_idx in pct_col_indices:
+                            fval = fval * 100
+                            val = fval  # keep raw consistent
                     except:
                         fval = None
                     # Store NaN only for truly missing values (None); 0 is a valid value
@@ -302,6 +324,9 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                         val = ws.cell(row=row_idx, column=col_idx).value
                         try:
                             fval = float(val) if val is not None else None
+                            if fval is not None and col_idx in pct_col_indices:
+                                fval = fval * 100
+                                val = fval
                         except:
                             fval = None
                         row_data.append(fval if fval is not None else np.nan)
@@ -484,7 +509,7 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
 
             # Smart numeric formatter — preserves significant figures for small values
             def fmt_val(v):
-                """Format a number to at most 3 decimal places.
+                """Format a number to at most 3 decimal places with thousand separators.
                 Integers display without decimal point; very small values use 2 s.f. scientific."""
                 if v == 0:
                     return '0'
@@ -493,16 +518,18 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                     # Too small for 3 dp — use 2 sig-fig scientific
                     return f"{v:.2e}"
                 elif v == int(v):
-                    return str(int(v))          # whole number, no decimal
+                    return f"{int(v):,}"          # whole number with commas
                 else:
-                    return f"{v:.3f}".rstrip('0').rstrip('.')  # up to 3 dp, strip trailing zeros
+                    formatted = f"{v:,.3f}".rstrip('0').rstrip('.')  # up to 3 dp, commas, strip trailing zeros
+                    return formatted
 
             # Build text display
             text_display = []
-            for row in all_original_values:
+            for row_i, row in enumerate(all_original_values):
                 text_row = []
-                for item in row:
+                for col_i, item in enumerate(row):
                     fval, raw = item if isinstance(item, tuple) else (item, None)
+                    col_is_pct = col_i < len(included_cols) and included_cols[col_i] in pct_col_indices
                     # Show NA only for blank cells or cells containing N/A text; 0 displays as 0
                     is_na_text = isinstance(raw, str) and raw.strip().upper() in ('N/A', 'NA', '#N/A')
                     if fval is None and not is_na_text and raw is not None and raw != '':
@@ -511,7 +538,8 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                     elif fval is None or is_na_text:
                         text_row.append('NA')
                     else:
-                        text_row.append(fmt_val(fval))
+                        formatted = fmt_val(fval)
+                        text_row.append(formatted + '%' if col_is_pct else formatted)
                 text_display.append(text_row)
 
             fig = px.imshow(
@@ -576,9 +604,9 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
             clean_y_labels = [re.sub(r'<[^>]+>', '', t) for t in y_labels_wrapped]
             longest_label_chars = max((len(s) for s in clean_y_labels), default=18)
             # increase base padding to give more horizontal room for long labels
-            computed_left = int(longest_label_chars * CHAR_PX + 120)
+            computed_left = int(longest_label_chars * CHAR_PX + 160)
             # bump defaults slightly
-            LEFT_M = left_margin if left_margin is not None else max(computed_left, 320 if show_row_groups else 220)
+            LEFT_M = left_margin if left_margin is not None else max(computed_left, 400 if show_row_groups else 260)
             RIGHT_M = 20
             BOTTOM_M = 20
             chart_height = dynamic_top + 40 + len(all_programs) * row_px
@@ -668,12 +696,18 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                     xref='x', yref='paper',
                     x0=end_idx + 0.5, x1=end_idx + 0.5,
                     y0=0.0, y1=band_y1,
-                    line=dict(color='black', width=3),
+                    line=dict(color='black', width=1),
                     layer='above'
                 )
 
             # Add program group bands to the LEFT of the y-axis (mirrors top KPI-type bands)
             if show_row_groups:
+                # Compute band x positions dynamically so they scale correctly with LEFT_M
+                # and the plot area width — prevents crowding when plot area is narrow.
+                _plot_w_px = len(kpi_names) * col_px
+                gx_outer = -(LEFT_M * 0.65) / _plot_w_px   # outer edge (furthest into margin)
+                gx_inner = -(LEFT_M * 0.30) / _plot_w_px   # inner edge (closest to y-axis)
+                gx_ann   = -(LEFT_M * 0.475) / _plot_w_px  # annotation midpoint
                 for idx, (group_name, start_idx, end_idx) in enumerate(program_group_spans):
                     # Skip bands that are entirely beyond the main heatmap rows or have no group name
                     if start_idx >= len(programs) or not group_name:
@@ -685,7 +719,7 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                     fig.add_shape(
                         type='rect',
                         xref='paper', yref='y',
-                        x0=-0.24, x1=-0.12,
+                        x0=gx_outer, x1=gx_inner,
                         y0=start_idx - 0.5, y1=end_idx + 0.5,
                         fillcolor='rgba(0,0,0,0)',
                         line=dict(color='rgba(0,0,0,0)', width=0),
@@ -693,7 +727,7 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                     )
                     fig.add_annotation(
                         xref='paper', yref='y',
-                        x=-0.18, y=y_center,
+                        x=gx_ann, y=y_center,
                         text=f"<b>{group_name}</b>",
                         showarrow=False,
                         font=dict(color='black', size=14, family='Arial Black, Arial, sans-serif'),
@@ -702,13 +736,13 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                         bgcolor='rgba(0,0,0,0)'
                     )
                     # Add a thick black horizontal line at the end of this row group
-                    # Extend from left edge of row-group band (-0.24 paper) to right edge of heatmap
+                    # Extend from outer edge of row-group band to right edge of heatmap
                     fig.add_shape(
                         type='line',
                         xref='paper', yref='y',
-                        x0=-0.24, x1=1.0,
+                        x0=gx_outer, x1=1.0,
                         y0=end_idx + 0.5, y1=end_idx + 0.5,
-                        line=dict(color='black', width=3),
+                        line=dict(color='black', width=1),
                         layer='above'
                     )
 
@@ -891,7 +925,7 @@ with tab2:
             try:
                 heatmap_file = os.path.join(root_dir, 'data', 'Heat map 5.xlsx')
                 if os.path.exists(heatmap_file):
-                    fig, df_below, df_raw = create_heatmap_visualization(heatmap_file)
+                    fig, df_below, df_raw = create_heatmap_visualization(heatmap_file, left_margin=400)
                     if fig:
                         st.plotly_chart(fig, use_container_width=False, config={'scrollZoom': False})
                     if df_below is not None and not df_below.empty:
@@ -908,7 +942,7 @@ with tab2:
             try:
                 heatmap_file = os.path.join(root_dir, 'data', 'Heat map 6.xlsx')
                 if os.path.exists(heatmap_file):
-                    fig, df_below, df_raw = create_heatmap_visualization(heatmap_file, side_cols=[4])
+                    fig, df_below, df_raw = create_heatmap_visualization(heatmap_file, side_cols=[4], left_margin=560)
                     if fig:
                         st.plotly_chart(fig, use_container_width=False, config={'scrollZoom': False})
                     if df_below is not None and not df_below.empty:
@@ -925,7 +959,7 @@ with tab2:
             try:
                 heatmap_file = os.path.join(root_dir, 'data', 'Heat map 7.xlsx')
                 if os.path.exists(heatmap_file):
-                    fig, df_below, df_raw = create_heatmap_visualization(heatmap_file, side_cols=[4])
+                    fig, df_below, df_raw = create_heatmap_visualization(heatmap_file, side_cols=[4], left_margin=560)
                     if fig:
                         st.plotly_chart(fig, use_container_width=False, config={'scrollZoom': False})
                     if df_below is not None and not df_below.empty:
