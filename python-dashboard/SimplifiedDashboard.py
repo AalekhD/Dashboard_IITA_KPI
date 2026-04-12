@@ -192,9 +192,17 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                 b_values[row_idx] = current_b
 
         # Get base KPI names and columns from kpi_row (starting from data_col_start)
+        # Scan to last non-None header to avoid empty trailing columns
         base_kpi_cols = []
         base_kpi_names = []
+        last_kpi_col = data_col_start
         for col_idx in range(data_col_start, ws.max_column + 1):
+            cell_val = ws.cell(row=kpi_row, column=col_idx).value
+            if cell_val is not None:
+                last_kpi_col = col_idx
+        for col_idx in range(data_col_start, last_kpi_col + 1):
+            if (side_cols or []) and col_idx in (side_cols or []):
+                continue  # already handled as a side column — do not add to base KPI list
             cell_val = ws.cell(row=kpi_row, column=col_idx).value
             if cell_val is not None:
                 base_kpi_cols.append(col_idx)
@@ -325,7 +333,7 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
             return '<br>'.join(f'<b>{line}</b>' for line in lines)
         kpi_tick_names = [bold_wrap(k) for k in kpi_names]
         # Y-axis: word-wrapped bold labels (horizontal)
-        y_labels_wrapped = ['<br>'.join(f'<b>{line}</b>' for line in wrap_label(p, max_len=18).split('<br>')) for p in all_programs]
+        y_labels_wrapped = ['<br>'.join(f'<b>{line}</b>' for line in wrap_label(p, max_len=24).split('<br>')) for p in all_programs]
 
         # Dynamically find the Per Program Target row by searching col 1 to program_col for the label
         per_program_target_row = None
@@ -420,7 +428,7 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                 midpoint = target / 2.0 if target else None
                 for r in range(len(all_programs)):
                     if r >= len(programs):
-                        df_normalized.iloc[r, col_i] = np.nan
+                        df_normalized.iloc[r, col_i] = -1.0  # sentinel → grey
                         continue
                     orig_item = all_original_values[r][col_i] if r < len(all_original_values) and col_i < len(all_original_values[r]) else (None, None)
                     orig_fval = orig_item[0] if isinstance(orig_item, tuple) else None
@@ -444,13 +452,22 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                         span = target - midpoint
                         df_normalized.iloc[r, col_i] = 0.5 + 0.5 * (orig_fval - midpoint) / span if span > 0 else 0.75
 
-            # 3-point colorscale: red → orange/yellow → dark green
+            # Extended colorscale: grey for below-row sentinel (-1), then red→green for data (0..1)
+            # With zmin=-1, zmax=1 the normalised position = (v+1)/2:
+            #   v=-1  → pos 0.00  (grey, below-row rows)
+            #   v= 0  → pos 0.50  (red,  data min)
+            #   v= 0.25 → pos 0.625 (orange)
+            #   v= 0.5 → pos 0.75  (yellow)
+            #   v= 0.75 → pos 0.875 (light green)
+            #   v= 1  → pos 1.00  (dark green)
             colorscale = [
-                [0.0,  '#D73027'],  # dark red  (at min)
-                [0.25, '#F46D43'],  # orange
-                [0.5,  '#FFFF00'],  # yellow (at midpoint = target/2)
-                [0.75, '#A6D96A'],  # light green
-                [1.0,  '#1A7A1A'],  # dark green (at or above per-program target)
+                [0.0,   '#9E9E9E'],  # grey (below-row sentinel)
+                [0.499, '#9E9E9E'],  # grey end
+                [0.5,   '#D73027'],  # dark red  (data min)
+                [0.625, '#F46D43'],  # orange
+                [0.75,  '#FFFF00'],  # yellow
+                [0.875, '#A6D96A'],  # light green
+                [1.0,   '#1A7A1A'],  # dark green
             ]
 
             # Smart numeric formatter — preserves significant figures for small values
@@ -496,7 +513,7 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                 color_continuous_scale=colorscale,
                 text_auto=False,
                 aspect="auto",
-                zmin=0,
+                zmin=-1,
                 zmax=1
             )
 
@@ -526,8 +543,15 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
             BAND_PX  = 30
             GAP_PX   = 8 if short_labels else 0  # extra space between tick labels and group bands
             dynamic_top = LABEL_PX + GAP_PX + BAND_PX
-            row_px = 22  # compact rows to fit on screen
-            LEFT_M = left_margin if left_margin is not None else (250 if show_row_groups else 180)
+            row_px = 32  # taller rows so text is more readable
+            # Compute left margin based on longest program label so row text fits
+            import re
+            clean_y_labels = [re.sub(r'<[^>]+>', '', t) for t in y_labels_wrapped]
+            longest_label_chars = max((len(s) for s in clean_y_labels), default=18)
+            # increase base padding to give more horizontal room for long labels
+            computed_left = int(longest_label_chars * CHAR_PX + 120)
+            # bump defaults slightly
+            LEFT_M = left_margin if left_margin is not None else max(computed_left, 320 if show_row_groups else 220)
             RIGHT_M = 20
             BOTTOM_M = 20
             chart_height = dynamic_top + 40 + len(all_programs) * row_px
@@ -597,10 +621,12 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                     line=dict(color='rgba(0,0,0,0)', width=0),
                     layer='above'
                 )
+                # Wrap group name so long labels don't overflow their column span
+                wrapped_group = '<br>'.join(f'<b>{line}</b>' for line in wrap_label(group_name, max_len=20).split('<br>'))
                 fig.add_annotation(
                     xref='x', yref='paper',
                     x=x_center, y=band_label_y,
-                    text=f"<b>{group_name}</b>",
+                    text=wrapped_group,
                     showarrow=False,
                     font=dict(color='black', size=14, family='Arial Black, Arial, sans-serif'),
                     align='center',
@@ -609,11 +635,12 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                     bgcolor='rgba(0,0,0,0)'
                 )
                 # Add a thick black vertical line at the end of this column group
+                # Extend from bottom of heatmap (y=1.0 paper) up through the column group band (band_y1)
                 fig.add_shape(
                     type='line',
-                    xref='x', yref='y',
+                    xref='x', yref='paper',
                     x0=end_idx + 0.5, x1=end_idx + 0.5,
-                    y0=-0.5, y1=len(all_programs) - 0.5,
+                    y0=0.0, y1=band_y1,
                     line=dict(color='black', width=3),
                     layer='above'
                 )
@@ -648,10 +675,11 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                         bgcolor='rgba(0,0,0,0)'
                     )
                     # Add a thick black horizontal line at the end of this row group
+                    # Extend from left edge of row-group band (-0.24 paper) to right edge of heatmap
                     fig.add_shape(
                         type='line',
-                        xref='x', yref='y',
-                        x0=-0.5, x1=len(kpi_names) - 0.5,
+                        xref='paper', yref='y',
+                        x0=-0.24, x1=1.0,
                         y0=end_idx + 0.5, y1=end_idx + 0.5,
                         line=dict(color='black', width=3),
                         layer='above'
