@@ -189,11 +189,36 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                                   left_margin=None, side_cols=None,
                                   zero_decimal_cols=None, one_decimal_cols=None, two_decimal_cols=None,
                                   zero_decimal_rows=None, one_decimal_rows=None, force_decimals=None, suppress_pct_display=False, monospace_numeric=False,
-                                  one_decimal_first_col=False, no_gray_first_col=False):
+                                  one_decimal_first_col=False, no_gray_first_col=False,
+                                  kpi_group_filter=None, force_include_cols=None, kpi_group_source=None, extra_top=0, group_gap=None):
     try:
         # Load with openpyxl to get clean numeric data
         wb = openpyxl.load_workbook(excel_file_path, data_only=True)
         ws = wb.active
+
+        # Build a map of merged cells -> top-left cell coordinates so we can
+        # read values/number formats from the merged-region anchor when a
+        # cell belongs to a merged range.
+        merged_map = {}
+        try:
+            for mr in ws.merged_cells.ranges:
+                min_r, min_c = mr.min_row, mr.min_col
+                for rr in range(mr.min_row, mr.max_row + 1):
+                    for cc in range(mr.min_col, mr.max_col + 1):
+                        merged_map[(rr, cc)] = (min_r, min_c)
+        except Exception:
+            merged_map = {}
+
+        def merged_cell_coord(r, c):
+            return merged_map.get((r, c), (r, c))
+
+        def merged_val(r, c):
+            tr, tc = merged_cell_coord(r, c)
+            return ws.cell(row=tr, column=tc).value
+
+        def merged_cell_obj(r, c):
+            tr, tc = merged_cell_coord(r, c)
+            return ws.cell(row=tr, column=tc)
 
         programs = []
         program_groups = []   # column B: GI / RAFS / ST etc.
@@ -212,24 +237,25 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
         b_values = {}
         if group_col is not None:
             for row_idx in range(data_row_start, ws.max_row + 1):
-                val = ws.cell(row=row_idx, column=group_col).value
+                val = merged_val(row_idx, group_col)
                 if val is not None:
                     current_b = str(val)
                 b_values[row_idx] = current_b
 
         # Get base KPI names and columns from kpi_row (starting from data_col_start)
-        # Scan to last non-None header to avoid empty trailing columns
+        # Scan to last non-None header to avoid empty trailing columns. Use
+        # merged_val so headers that are part of merged cells are detected.
         base_kpi_cols = []
         base_kpi_names = []
         last_kpi_col = data_col_start
         for col_idx in range(data_col_start, ws.max_column + 1):
-            cell_val = ws.cell(row=kpi_row, column=col_idx).value
+            cell_val = merged_val(kpi_row, col_idx) if kpi_row else None
             if cell_val is not None:
                 last_kpi_col = col_idx
         for col_idx in range(data_col_start, last_kpi_col + 1):
             if (side_cols or []) and col_idx in (side_cols or []):
                 continue  # already handled as a side column — do not add to base KPI list
-            cell_val = ws.cell(row=kpi_row, column=col_idx).value
+            cell_val = merged_val(kpi_row, col_idx) if kpi_row else None
             if cell_val is not None:
                 base_kpi_cols.append(col_idx)
                 base_kpi_names.append(str(cell_val))
@@ -241,11 +267,42 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
         included_cols = []
         kpi_names = []
         for c in side_cols:
-            hdr = ws.cell(row=kpi_row, column=c).value if kpi_row and ws.cell(row=kpi_row, column=c).value is not None else get_column_letter(c)
+            if kpi_row:
+                obj = merged_cell_obj(kpi_row, c)
+                hdr = obj.value if obj and obj.value is not None else get_column_letter(c)
+            else:
+                hdr = get_column_letter(c)
             included_cols.append(c)
             kpi_names.append(str(hdr))
         included_cols.extend(base_kpi_cols)
         kpi_names.extend(base_kpi_names)
+
+        # Allow caller to force include specific absolute column indices
+        # (useful for wide heatmap variants where data sits in widely spaced columns)
+        if force_include_cols:
+            for col_idx in force_include_cols:
+                if col_idx not in included_cols and col_idx <= ws.max_column:
+                    hdr = merged_val(kpi_row, col_idx) if kpi_row else None
+                    included_cols.append(col_idx)
+                    kpi_names.append(str(hdr) if hdr is not None else get_column_letter(col_idx))
+
+        # Ensure we include any columns that contain data in the data rows even if the
+        # KPI header cell is blank (some wide sheets leave header cells empty).
+        for col_idx in range(data_col_start, ws.max_column + 1):
+            if col_idx in included_cols:
+                continue
+            has_data = False
+            # Check all data rows (including rows beyond heatmap_max_row) for any
+            # non-empty cell in this column so we don't omit columns that only
+            # have values in the 'below' region.
+            for r in range(data_row_start, ws.max_row + 1):
+                if merged_val(r, col_idx) is not None:
+                    has_data = True
+                    break
+            if has_data:
+                included_cols.append(col_idx)
+                hdr = merged_val(kpi_row, col_idx) if kpi_row else None
+                kpi_names.append(str(hdr) if hdr is not None else get_column_letter(col_idx))
 
         # Get KPI type groups from kpi_group_row (fill-forward for merged cells)
         current_type = None
@@ -253,10 +310,68 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
             if c in side_cols:
                 kpi_type_groups.append("")
             else:
-                val = ws.cell(row=kpi_group_row, column=c).value
+                val = merged_val(kpi_group_row, c) if kpi_group_row else None
                 if val is not None:
                     current_type = str(val)
                 kpi_type_groups.append(current_type or "")
+
+        # If a separate KPI group source file was provided, prefer its grouping
+        # text (useful when Capacity/Product sheets omit the top grouping row).
+        if kpi_group_source and os.path.exists(kpi_group_source):
+            try:
+                wb_src = openpyxl.load_workbook(kpi_group_source, data_only=True)
+                ws_src = wb_src.active
+                # Build merged map for source
+                merged_map_src = {}
+                try:
+                    for mr in ws_src.merged_cells.ranges:
+                        min_r, min_c = mr.min_row, mr.min_col
+                        for rr in range(mr.min_row, mr.max_row + 1):
+                            for cc in range(mr.min_col, mr.max_col + 1):
+                                merged_map_src[(rr, cc)] = (min_r, min_c)
+                except Exception:
+                    merged_map_src = {}
+
+                def merged_src_val(r, c):
+                    tr, tc = merged_map_src.get((r, c), (r, c))
+                    return ws_src.cell(row=tr, column=tc).value
+
+                # Build group values from the source file with fill-forward semantics
+                src_current = None
+                src_groups = []
+                for c in included_cols:
+                    if c in side_cols:
+                        src_groups.append("")
+                    else:
+                        v = merged_src_val(kpi_group_row, c) if kpi_group_row else None
+                        if v is not None:
+                            src_current = str(v)
+                        src_groups.append(src_current or "")
+
+                # If the source provided any non-empty group names, replace the groups
+                if any(g for g in src_groups if g):
+                    kpi_type_groups = src_groups
+            except Exception:
+                pass
+
+        # If a KPI group filter was specified, filter included columns and names
+        # by case-insensitive substring match on the KPI type group. This allows
+        # creating focused "KPI over Time" views for Research Outputs,
+        # Capacity Building, Product Development, etc.
+        if kpi_group_filter:
+            filt = str(kpi_group_filter).strip().lower()
+            new_included = []
+            new_names = []
+            new_type_groups = []
+            for col_idx, name, grp in zip(included_cols, kpi_names, kpi_type_groups):
+                if grp and filt in grp.lower():
+                    new_included.append(col_idx)
+                    new_names.append(name)
+                    new_type_groups.append(grp)
+            if new_included:
+                included_cols = new_included
+                kpi_names = new_names
+                kpi_type_groups = new_type_groups
 
         # Truncate to ~34 chars to match Excel row-3 height (191px) at 9pt font (~5.5px/char)
         def truncate_label(text, max_len=34):
@@ -289,6 +404,20 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                     span_start = i
             kpi_type_spans.append((span_name, span_start, len(kpi_type_groups) - 1))
 
+        # Make KPI names unique while preserving visible text by appending
+        # zero-width-space suffixes to repeated labels. This prevents
+        # dictionary-based row assembly from collapsing duplicate columns.
+        seen = {}
+        unique_kpi_names = []
+        for name in kpi_names:
+            cnt = seen.get(name, 0)
+            if cnt == 0:
+                unique_kpi_names.append(name)
+            else:
+                unique_kpi_names.append(name + '\u200b' * cnt)
+            seen[name] = cnt + 1
+        kpi_names = unique_kpi_names
+
         # Build set of column indices whose KPI header contains '%'.
         # openpyxl returns percentage-formatted cells as decimals (e.g. 0.85 for 85%);
         # multiply by 100 so values display as the user entered them in Excel.
@@ -303,21 +432,21 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
             else:
                 # Scan first few data rows for a % number format on that column
                 for scan_row in range(data_row_start, min(data_row_start + 5, ws.max_row + 1)):
-                    cell = ws.cell(row=scan_row, column=col_idx)
-                    if cell.value is not None and cell.number_format and '%' in cell.number_format:
+                    cell_obj = merged_cell_obj(scan_row, col_idx)
+                    if cell_obj is not None and cell_obj.value is not None and getattr(cell_obj, 'number_format', None) and '%' in cell_obj.number_format:
                         pct_col_indices.add(col_idx)
                         break
 
         # Get data from data_row_start to heatmap_max_row for the heatmap
         for row_idx in range(data_row_start, heatmap_max_row + 1):
-            program_cell = ws.cell(row=row_idx, column=program_col).value
+            program_cell = merged_val(row_idx, program_col)
             if program_cell is not None and program_cell != "None":
                 programs.append(str(program_cell))
                 program_groups.append(b_values.get(row_idx) or "" if group_col is not None else "")
                 row_data = []
                 orig_data = []  # stores (fval, raw_val) tuples
                 for col_idx in included_cols:
-                    val = ws.cell(row=row_idx, column=col_idx).value
+                    val = merged_val(row_idx, col_idx)
                     try:
                         fval = float(val) if val is not None else None
                         if fval is not None and col_idx in pct_col_indices:
@@ -334,13 +463,27 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
         # Collect rows beyond heatmap_max_row — merged into heatmap as gray rows
         if include_below_rows:
             for row_idx in range(heatmap_max_row + 1, ws.max_row + 1):
-                program_cell = ws.cell(row=row_idx, column=program_col).value
-                if program_cell is not None and program_cell != "None":
+                program_cell = merged_val(row_idx, program_col)
+                # Only include this below-row if it contains any non-blank data in the
+                # KPI columns; otherwise skip so we don't render empty grey rows.
+                # Treat None or empty/whitespace-only strings as blank.
+                if program_cell is not None and str(program_cell).strip() not in ('', 'None'):
+                    has_any = False
+                    for col_idx in included_cols:
+                        v = merged_val(row_idx, col_idx)
+                        if v is None:
+                            continue
+                        if isinstance(v, str) and v.strip() == '':
+                            continue
+                        has_any = True
+                        break
+                    if not has_any:
+                        continue
                     below_programs.append(str(program_cell))
                     row_data = []
                     orig_row = []  # stores (fval, raw_val) tuples
                     for col_idx in included_cols:
-                        val = ws.cell(row=row_idx, column=col_idx).value
+                        val = merged_val(row_idx, col_idx)
                         try:
                             fval = float(val) if val is not None else None
                             if fval is not None and col_idx in pct_col_indices:
@@ -390,7 +533,7 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
         per_program_target_row = None
         for row_idx in range(heatmap_max_row + 1, ws.max_row + 1):
             for col_idx in range(1, (program_col or 3) + 1):
-                val = ws.cell(row=row_idx, column=col_idx).value
+                val = merged_val(row_idx, col_idx)
                 if val and 'per program' in str(val).lower():
                     per_program_target_row = row_idx
                     break
@@ -400,7 +543,7 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
         per_program_targets = []
         if per_program_target_row:
             for col_idx in range(data_col_start, data_col_start + len(kpi_names)):
-                val = ws.cell(row=per_program_target_row, column=col_idx).value
+                val = merged_val(per_program_target_row, col_idx)
                 try:
                     per_program_targets.append(float(val) if val is not None else None)
                 except:
@@ -414,7 +557,7 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
             annual_target_row = None
             for row_idx in range(heatmap_max_row + 1, ws.max_row + 1):
                 for col_idx in range(1, (program_col or 3) + 1):
-                    val = ws.cell(row=row_idx, column=col_idx).value
+                    val = merged_val(row_idx, col_idx)
                     if val and 'annual target' in str(val).lower():
                         annual_target_row = row_idx
                         break
@@ -424,7 +567,7 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                 n = len(programs)
                 per_program_targets = []
                 for col_idx in range(data_col_start, data_col_start + len(kpi_names)):
-                    val = ws.cell(row=annual_target_row, column=col_idx).value
+                    val = merged_val(annual_target_row, col_idx)
                     try:
                         annl = float(val) if val is not None else None
                         per_program_targets.append(annl / n if annl is not None and n > 0 else None)
@@ -504,14 +647,10 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                         span = target - midpoint
                         df_normalized.iloc[r, col_i] = 0.5 + 0.5 * (orig_fval - midpoint) / span if span > 0 else 0.75
 
-            # Force cells in below-row rows to grey sentinel (-1.0).
-            # Optionally skip greying the first KPI column when `no_gray_first_col` is True.
-            if len(below_programs) > 0:
-                if no_gray_first_col and df_normalized.shape[1] > 1:
-                    # Keep first column as-is; grey the rest
-                    df_normalized.iloc[len(programs):, 1:] = -1.0
-                else:
-                    df_normalized.iloc[len(programs):, :] = -1.0
+            # Previously we forced entire below-row rows to grey. Remove that
+            # behavior so that below-row cells containing actual data are
+            # colored using the same normalization rules as main rows, while
+            # blank/NA cells remain uncolored.
 
             # Extended colorscale: grey for below-row sentinel (-1), then red→green for data (0..1)
             # With zmin=-1, zmax=1 the normalised position = (v+1)/2:
@@ -583,13 +722,17 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                 for col_i, item in enumerate(row):
                     fval, raw = item if isinstance(item, tuple) else (item, None)
                     col_is_pct = col_i < len(included_cols) and included_cols[col_i] in pct_col_indices
-                    # Show NA only for blank cells or cells containing N/A text; 0 displays as 0
+                    # Show blank for truly empty cells; show 'NA' for N/A text; otherwise show raw text
                     is_na_text = isinstance(raw, str) and raw.strip().upper() in ('N/A', 'NA', '#N/A')
-                    if fval is None and not is_na_text and raw is not None and raw != '':
-                        # non-numeric text that isn't N/A — show as-is
-                        text_row.append(str(raw))
-                    elif fval is None or is_na_text:
-                        text_row.append('NA')
+                    if fval is None:
+                        # Preserve blank cells
+                        if raw is None or (isinstance(raw, str) and raw.strip() == ''):
+                            text_row.append('')
+                        elif is_na_text:
+                            text_row.append('NA')
+                        else:
+                            # non-numeric text that isn't N/A — show as-is
+                            text_row.append(str(raw))
                     else:
                         if col_i in one_dp_positions:
                             formatted = f"{fval:,.1f}"
@@ -685,8 +828,8 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                 tick_angle = -45
                 col_px = 80  # wide enough so diagonal labels don't override each other
             BAND_PX  = 30
-            GAP_PX   = 8 if short_labels else 0  # extra space between tick labels and group bands
-            dynamic_top = LABEL_PX + GAP_PX + BAND_PX
+            GAP_PX   = group_gap if group_gap is not None else (8 if short_labels else 0)  # extra space between tick labels and group bands
+            dynamic_top = LABEL_PX + GAP_PX + BAND_PX + (extra_top or 0)
             row_px = 32  # taller rows so text is more readable
             # Compute left margin based on longest program label so row text fits
             import re
@@ -794,9 +937,10 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                 # Compute band x positions dynamically so they scale correctly with LEFT_M
                 # and the plot area width — prevents crowding when plot area is narrow.
                 _plot_w_px = len(kpi_names) * col_px
-                gx_outer = -(LEFT_M * 0.65) / _plot_w_px   # outer edge (furthest into margin)
-                gx_inner = -(LEFT_M * 0.30) / _plot_w_px   # inner edge (closest to y-axis)
-                gx_ann   = -(LEFT_M * 0.475) / _plot_w_px  # annotation midpoint
+                # Move group band further into the left margin to create a visible gap
+                gx_outer = -(LEFT_M * 0.75) / _plot_w_px   # outer edge (furthest into margin)
+                gx_inner = -(LEFT_M * 0.25) / _plot_w_px   # inner edge (closest to y-axis)
+                gx_ann   = -(LEFT_M * 0.60) / _plot_w_px  # annotation midpoint (further left)
                 for idx, (group_name, start_idx, end_idx) in enumerate(program_group_spans):
                     # Skip bands that are entirely beyond the main heatmap rows or have no group name
                     if start_idx >= len(programs) or not group_name:
@@ -804,7 +948,7 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                     end_idx = min(end_idx, len(programs) - 1)
                     color = left_group_colors[idx % len(left_group_colors)]
                     y_center = (start_idx + end_idx) / 2
-                    # Left group: no fill, larger black rotated label
+                    # Left group: no fill, larger black horizontal label anchored to the right
                     fig.add_shape(
                         type='rect',
                         xref='paper', yref='y',
@@ -814,14 +958,17 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                         line=dict(color='rgba(0,0,0,0)', width=0),
                         layer='above'
                     )
+                    # Wrap long group names so they don't overflow and anchor to the right
+                    wrapped_left = '<br>'.join(f'<b>{line}</b>' for line in wrap_label(group_name, max_len=12).split('<br>'))
                     fig.add_annotation(
                         xref='paper', yref='y',
                         x=gx_ann, y=y_center,
-                        text=f"<b>{group_name}</b>",
+                        text=wrapped_left,
                         showarrow=False,
-                        font=dict(color='black', size=14, family='Arial Black, Arial, sans-serif'),
+                        font=dict(color='black', size=12, family='Arial Black, Arial, sans-serif'),
                         align='center',
-                        textangle=-90,
+                        xanchor='right',
+                        textangle=0,
                         bgcolor='rgba(0,0,0,0)'
                     )
                     # Add a thick black horizontal line at the end of this row group
@@ -981,21 +1128,80 @@ with tab2:
             st.write("**Research, Training, Product Development - KPI over Time**")
             try:
                 heatmap_file = os.path.join(root_dir, 'data', 'Heat map 4.xlsx')
-                if os.path.exists(heatmap_file):
-                    fig, df_below, df_raw = create_heatmap_visualization(
-                        heatmap_file,
-                        heatmap_max_row=15,
-                        data_col_start=3, program_col=2, group_col=None,
-                        kpi_row=2, kpi_group_row=1, data_row_start=3,
-                        show_row_groups=False, include_below_rows=True,
-                        left_margin=300
-                    )
-                    if fig:
-                        st.plotly_chart(fig, use_container_width=False, config={'scrollZoom': False})
-                    if df_below is not None and not df_below.empty:
-                        st.markdown("---")
-                        st.markdown("**Additional Data**")
-                        render_gray_table(df_below)
+                heatmap_file_4_1 = os.path.join(root_dir, 'data', 'Heat map 4-1 Research Outputs.xlsx')
+                heatmap_choice = heatmap_file_4_1 if os.path.exists(heatmap_file_4_1) else heatmap_file
+                if os.path.exists(heatmap_choice):
+                    st.caption(f"Using file: {os.path.basename(heatmap_choice)}")
+                    # Provide three focused KPI-over-time sub-tabs so users can
+                    # view Research Outputs, Capacity Building, and Product
+                    # Development separately.
+                    ot_tabs = st.tabs(["Research Outputs", "Capacity Building", "Product Development"])
+
+                    with ot_tabs[0]:
+                        # Research Outputs
+                        fig, df_below, df_raw = create_heatmap_visualization(
+                            heatmap_choice,
+                            zero_decimal_cols=['Thompson', 'Thomson'],
+                            one_decimal_cols=['per IRS', 'per irs'],
+                            zero_decimal_rows=['per program target', 'per programme target'],
+                            force_decimals=0,
+                            kpi_group_filter='research',
+                            kpi_group_row=2
+                        )
+                        if fig:
+                            st.plotly_chart(fig, use_container_width=False, config={'scrollZoom': False})
+                        if df_below is not None and not df_below.empty:
+                            st.markdown("---")
+                            st.markdown("**Additional Data**")
+                            render_gray_table(df_below)
+
+                    with ot_tabs[1]:
+                        # Capacity Building — prefer a dedicated capacity-building file if present
+                        cap_file = os.path.join(root_dir, 'data', 'Heat map 4-1 Capacity Building.xlsx')
+                        cap_choice = cap_file if os.path.exists(cap_file) else heatmap_choice
+                        # Data is known to live in columns 10,16,22 for this sheet
+                        fig, df_below, df_raw = create_heatmap_visualization(
+                            cap_choice,
+                            zero_decimal_cols=['Thompson', 'Thomson'],
+                            one_decimal_cols=['per IRS', 'per irs'],
+                            zero_decimal_rows=['per program target', 'per programme target'],
+                            force_decimals=0,
+                            kpi_group_filter='capacity',
+                            force_include_cols=[10, 16, 22],
+                            kpi_row=3,
+                            kpi_group_row=2
+                        )
+                        if fig:
+                            st.plotly_chart(fig, use_container_width=False, config={'scrollZoom': False})
+                        if df_below is not None and not df_below.empty:
+                            st.markdown("---")
+                            st.markdown("**Additional Data**")
+                            render_gray_table(df_below)
+
+                    with ot_tabs[2]:
+                        # Product Development — prefer a dedicated product-development file if present
+                        prod_file = os.path.join(root_dir, 'data', 'Heat map 4-1 - Product Development.xlsx')
+                        prod_choice = prod_file if os.path.exists(prod_file) else heatmap_choice
+                        # Data is known to live in columns 10,16,22,28 for this sheet
+                        fig, df_below, df_raw = create_heatmap_visualization(
+                            prod_choice,
+                            zero_decimal_cols=['Thompson', 'Thomson'],
+                            one_decimal_cols=['per IRS', 'per irs'],
+                            zero_decimal_rows=['per program target', 'per programme target'],
+                            force_decimals=0,
+                            kpi_group_filter='product',
+                            force_include_cols=[10, 16, 22, 28],
+                            kpi_row=3,
+                            kpi_group_row=2,
+                            extra_top=30,
+                            group_gap=40
+                        )
+                        if fig:
+                            st.plotly_chart(fig, use_container_width=False, config={'scrollZoom': False})
+                        if df_below is not None and not df_below.empty:
+                            st.markdown("---")
+                            st.markdown("**Additional Data**")
+                            render_gray_table(df_below)
                 else:
                     st.info("📁 Waiting for: Heat map 4.xlsx")
             except Exception as e:
@@ -1062,6 +1268,65 @@ with tab2:
 
         with rsi_tabs[3]:
             st.write("**Recognition, Societal Impact & Inclusivity - KPI over Time**")
+            # Create focused sub-tabs for Recognition and Societal Impact
+            rsi_ot_sub = st.tabs(["Recognition and Reputation", "Societal Impact and Inclusion"]) 
+            # Base heatmap file fallback
+            heatmap_file = os.path.join(root_dir, 'data', 'Heat map 5.xlsx')
+
+            with rsi_ot_sub[0]:
+                try:
+                    # Prefer dedicated Heat map 4-2 recognition file; fall back to Heat map 5
+                    rec_file = os.path.join(root_dir, 'data', 'Heat map 4-2 Recognition and Reputation.xlsx')
+                    rec_choice = rec_file if os.path.exists(rec_file) else heatmap_file
+                    if os.path.exists(rec_choice):
+                        fig, df_below, df_raw = create_heatmap_visualization(
+                            rec_choice,
+                            zero_decimal_cols=['Thompson', 'Thomson'],
+                            one_decimal_cols=['per IRS', 'per irs'],
+                            zero_decimal_rows=['per program target', 'per programme target'],
+                            force_decimals=0,
+                            kpi_group_filter='recognition',
+                            kpi_group_row=2,
+                            extra_top=30,
+                            group_gap=40
+                        )
+                        if fig:
+                            st.plotly_chart(fig, use_container_width=False, config={'scrollZoom': False})
+                        if df_below is not None and not df_below.empty:
+                            st.markdown('---')
+                            st.markdown('**Additional Data**')
+                            render_gray_table(df_below)
+                    else:
+                        st.info('📁 Waiting for: Heat map 5.xlsx or Recognition file')
+                except Exception as e:
+                    st.warning(f"Could not load Recognition heatmap: {str(e)}")
+
+            with rsi_ot_sub[1]:
+                try:
+                    soc_file = os.path.join(root_dir, 'data', 'Heat map 4-2 Society Impact and Inclusion.xlsx')
+                    soc_choice = soc_file if os.path.exists(soc_file) else heatmap_file
+                    if os.path.exists(soc_choice):
+                        fig, df_below, df_raw = create_heatmap_visualization(
+                            soc_choice,
+                            zero_decimal_cols=['Thompson', 'Thomson'],
+                            one_decimal_cols=['per IRS', 'per irs'],
+                            zero_decimal_rows=['per program target', 'per programme target'],
+                            force_decimals=0,
+                            kpi_group_filter='societal',
+                            kpi_group_row=2,
+                            extra_top=30,
+                            group_gap=40
+                        )
+                        if fig:
+                            st.plotly_chart(fig, use_container_width=False, config={'scrollZoom': False})
+                        if df_below is not None and not df_below.empty:
+                            st.markdown('---')
+                            st.markdown('**Additional Data**')
+                            render_gray_table(df_below)
+                    else:
+                        st.info('📁 Waiting for: Heat map 5.xlsx or Societal Impact file')
+                except Exception as e:
+                    st.warning(f"Could not load Societal Impact heatmap: {str(e)}")
 
 # Service Units Tab (now third)
 with tab3:
@@ -1091,4 +1356,3 @@ with tab3:
 
 st.markdown("---")
 st.caption("Last updated: April 8, 2026 | IITA KPI Dashboard")
-
