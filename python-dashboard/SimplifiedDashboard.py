@@ -40,7 +40,7 @@ def load_kpi_data():
     return df_programs, df_services, df_heatmap
 
 # Function to convert Excel with merged cells to HTML
-def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False):
+def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highlight_row_keyword=None):
     # Load workbook with data_only=True to get calculated values instead of formulas
     wb_data = openpyxl.load_workbook(excel_file_path, data_only=True)
     ws_data = wb_data.active
@@ -89,7 +89,19 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False):
         # Skip completely empty rows
         if not has_row_data:
             continue
-        
+
+        # Determine if this row should be highlighted (contains keyword)
+        highlight_row = False
+        if highlight_row_keyword:
+            try:
+                lowkw = highlight_row_keyword.strip().lower()
+                for c in row_data:
+                    if c.value is not None and lowkw in str(c.value).lower():
+                        highlight_row = True
+                        break
+            except Exception:
+                highlight_row = False
+
         html += '<tr>'
         for col_idx in range(1, max_col + 1):
             cell_data = row_data[col_idx - 1]
@@ -157,7 +169,11 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False):
             if row_idx == 1:
                 html += f'<th style="background-color: #00891a; color: white; font-weight: bold;" rowspan="{rowspan}" colspan="{colspan}">{cell_value}</th>'
             else:
-                html += f'<td rowspan="{rowspan}" colspan="{colspan}">{cell_value}</td>'
+                # If this row matches the highlight keyword, make its cells green with white text
+                if highlight_row:
+                    html += f'<td style="background-color: #00891a; color: white;" rowspan="{rowspan}" colspan="{colspan}">{cell_value}</td>'
+                else:
+                    html += f'<td rowspan="{rowspan}" colspan="{colspan}">{cell_value}</td>'
         
         html += '</tr>'
     
@@ -170,7 +186,10 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                                   data_col_start=4, program_col=3, group_col=2,
                                   kpi_row=3, kpi_group_row=2, data_row_start=4,
                                   show_row_groups=True, include_below_rows=True,
-                                  left_margin=None, side_cols=None):
+                                  left_margin=None, side_cols=None,
+                                  zero_decimal_cols=None, one_decimal_cols=None, two_decimal_cols=None,
+                                  zero_decimal_rows=None, one_decimal_rows=None, force_decimals=None, suppress_pct_display=False, monospace_numeric=False,
+                                  one_decimal_first_col=False, no_gray_first_col=False):
     try:
         # Load with openpyxl to get clean numeric data
         wb = openpyxl.load_workbook(excel_file_path, data_only=True)
@@ -485,9 +504,14 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                         span = target - midpoint
                         df_normalized.iloc[r, col_i] = 0.5 + 0.5 * (orig_fval - midpoint) / span if span > 0 else 0.75
 
-            # Force ALL cells in below-row rows to grey sentinel (-1.0) regardless of column type
+            # Force cells in below-row rows to grey sentinel (-1.0).
+            # Optionally skip greying the first KPI column when `no_gray_first_col` is True.
             if len(below_programs) > 0:
-                df_normalized.iloc[len(programs):, :] = -1.0
+                if no_gray_first_col and df_normalized.shape[1] > 1:
+                    # Keep first column as-is; grey the rest
+                    df_normalized.iloc[len(programs):, 1:] = -1.0
+                else:
+                    df_normalized.iloc[len(programs):, :] = -1.0
 
             # Extended colorscale: grey for below-row sentinel (-1), then red→green for data (0..1)
             # With zmin=-1, zmax=1 the normalised position = (v+1)/2:
@@ -525,8 +549,37 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
 
             # Build text display
             text_display = []
+            # Build set of column positions for fixed decimal formatting
+            zero_dp_positions = set()
+            if zero_decimal_cols:
+                for ci, name in enumerate(kpi_names):
+                    if any(sub.lower() in name.lower() for sub in zero_decimal_cols):
+                        zero_dp_positions.add(ci)
+            one_dp_positions = set()
+            if one_decimal_cols:
+                for ci, name in enumerate(kpi_names):
+                    if any(sub.lower() in name.lower() for sub in one_decimal_cols):
+                        one_dp_positions.add(ci)
+            two_dp_positions = set()
+            if two_decimal_cols:
+                for ci, name in enumerate(kpi_names):
+                    if any(sub.lower() in name.lower() for sub in two_decimal_cols):
+                        two_dp_positions.add(ci)
+            # Build set of row indices whose label matches zero_decimal_rows or one_decimal_rows substrings
+            zero_dp_row_indices = set()
+            if zero_decimal_rows:
+                for ri, prog in enumerate(all_programs):
+                    if any(sub.lower() in prog.lower() for sub in zero_decimal_rows):
+                        zero_dp_row_indices.add(ri)
+            one_dp_row_indices = set()
+            if one_decimal_rows:
+                for ri, prog in enumerate(all_programs):
+                    if any(sub.lower() in prog.lower() for sub in one_decimal_rows):
+                        one_dp_row_indices.add(ri)
             for row_i, row in enumerate(all_original_values):
                 text_row = []
+                row_force_zero_dp = row_i in zero_dp_row_indices
+                row_force_one_dp = row_i in one_dp_row_indices
                 for col_i, item in enumerate(row):
                     fval, raw = item if isinstance(item, tuple) else (item, None)
                     col_is_pct = col_i < len(included_cols) and included_cols[col_i] in pct_col_indices
@@ -538,9 +591,45 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                     elif fval is None or is_na_text:
                         text_row.append('NA')
                     else:
-                        formatted = fmt_val(fval)
-                        text_row.append(formatted + '%' if col_is_pct else formatted)
+                        if col_i in one_dp_positions:
+                            formatted = f"{fval:,.1f}"
+                        elif col_i in two_dp_positions:
+                            formatted = f"{fval:,.2f}"
+                        elif one_decimal_first_col and col_i == 0:
+                            formatted = f"{fval:,.1f}"
+                        elif row_force_one_dp:
+                            formatted = f"{fval:,.1f}"
+                        elif row_force_zero_dp or col_i in zero_dp_positions:
+                            formatted = f"{round(fval):,}"
+                        elif force_decimals is not None:
+                            formatted = f"{fval:,.{force_decimals}f}"
+                        else:
+                            formatted = fmt_val(fval)
+                        show_pct = col_is_pct and not suppress_pct_display
+                        text_row.append(formatted + '%' if show_pct else formatted)
                 text_display.append(text_row)
+
+            # If requested, pad numeric text to align right using a monospace font.
+            if monospace_numeric:
+                ncols = len(kpi_names)
+                nrows = len(text_display)
+                col_max = [0] * ncols
+                for j in range(ncols):
+                    for i in range(nrows):
+                        if j < len(text_display[i]):
+                            s = str(text_display[i][j])
+                        else:
+                            s = ''
+                        if len(s) > col_max[j]:
+                            col_max[j] = len(s)
+                for i in range(nrows):
+                    for j in range(ncols):
+                        if j < len(text_display[i]):
+                            s = str(text_display[i][j])
+                        else:
+                            s = ''
+                        text_display[i][j] = s.rjust(col_max[j], '\u00A0')
+            text_family = 'Courier New, monospace' if monospace_numeric else 'Arial, sans-serif'
 
             fig = px.imshow(
                 df_normalized.values,
@@ -558,7 +647,7 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
             fig.update_traces(
                 text=np.array(text_display, dtype=object),
                 texttemplate='%{text}',
-                textfont=dict(size=16, color='black'),
+                textfont=dict(size=16, color='black', family=text_family),
                 xgap=2,
                 ygap=2
             )
@@ -572,7 +661,7 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                     y=all_programs[len(programs):],
                     text=np.array(below_text, dtype=object),
                     texttemplate='%{text}',
-                    textfont=dict(size=16, color='#333333'),
+                    textfont=dict(size=16, color='#333333', family=text_family),
                     showscale=False,
                     coloraxis=None,
                     colorscale=[[0, 'rgba(0,0,0,0)'], [1, 'rgba(0,0,0,0)']],
@@ -696,7 +785,7 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                     xref='x', yref='paper',
                     x0=end_idx + 0.5, x1=end_idx + 0.5,
                     y0=0.0, y1=band_y1,
-                    line=dict(color='black', width=1),
+                    line=dict(color='black', width=2),
                     layer='above'
                 )
 
@@ -742,7 +831,7 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                         xref='paper', yref='y',
                         x0=gx_outer, x1=1.0,
                         y0=end_idx + 0.5, y1=end_idx + 0.5,
-                        line=dict(color='black', width=1),
+                        line=dict(color='black', width=2),
                         layer='above'
                     )
 
@@ -842,7 +931,7 @@ with tab2:
             try:
                 heatmap_file = os.path.join(root_dir, 'data', 'Heat map 1.xlsx')
                 if os.path.exists(heatmap_file):
-                    fig, df_below, df_raw = create_heatmap_visualization(heatmap_file)
+                    fig, df_below, df_raw = create_heatmap_visualization(heatmap_file, zero_decimal_cols=['Thompson', 'Thomson'], one_decimal_cols=['per IRS', 'per irs'], zero_decimal_rows=['per program target', 'per programme target'])
                     if fig:
                         st.plotly_chart(fig, use_container_width=False, config={'scrollZoom': False})
                     if df_below is not None and not df_below.empty:
@@ -859,7 +948,7 @@ with tab2:
             try:
                 heatmap_file = os.path.join(root_dir, 'data', 'Heat map 2.xlsx')
                 if os.path.exists(heatmap_file):
-                    fig, df_below, df_raw = create_heatmap_visualization(heatmap_file, side_cols=[4])
+                    fig, df_below, df_raw = create_heatmap_visualization(heatmap_file, side_cols=[4], force_decimals=2, suppress_pct_display=True, one_decimal_first_col=True, no_gray_first_col=True)
                     if fig:
                         st.plotly_chart(fig, use_container_width=False, config={'scrollZoom': False})
                     if df_below is not None and not df_below.empty:
@@ -876,7 +965,7 @@ with tab2:
             try:
                 heatmap_file = os.path.join(root_dir, 'data', 'Heat map 3.xlsx')
                 if os.path.exists(heatmap_file):
-                    fig, df_below, df_raw = create_heatmap_visualization(heatmap_file, side_cols=[4])
+                    fig, df_below, df_raw = create_heatmap_visualization(heatmap_file, side_cols=[4], force_decimals=2, monospace_numeric=False, one_decimal_first_col=True, no_gray_first_col=True)
                     if fig:
                         st.plotly_chart(fig, use_container_width=False, config={'scrollZoom': False})
                     if df_below is not None and not df_below.empty:
@@ -925,7 +1014,7 @@ with tab2:
             try:
                 heatmap_file = os.path.join(root_dir, 'data', 'Heat map 5.xlsx')
                 if os.path.exists(heatmap_file):
-                    fig, df_below, df_raw = create_heatmap_visualization(heatmap_file, left_margin=400)
+                    fig, df_below, df_raw = create_heatmap_visualization(heatmap_file, left_margin=400, one_decimal_rows=['per program target', 'per programme target'])
                     if fig:
                         st.plotly_chart(fig, use_container_width=False, config={'scrollZoom': False})
                     if df_below is not None and not df_below.empty:
@@ -942,7 +1031,7 @@ with tab2:
             try:
                 heatmap_file = os.path.join(root_dir, 'data', 'Heat map 6.xlsx')
                 if os.path.exists(heatmap_file):
-                    fig, df_below, df_raw = create_heatmap_visualization(heatmap_file, side_cols=[4], left_margin=560)
+                    fig, df_below, df_raw = create_heatmap_visualization(heatmap_file, side_cols=[4], left_margin=560, one_decimal_first_col=True, force_decimals=3, no_gray_first_col=True)
                     if fig:
                         st.plotly_chart(fig, use_container_width=False, config={'scrollZoom': False})
                     if df_below is not None and not df_below.empty:
@@ -959,7 +1048,7 @@ with tab2:
             try:
                 heatmap_file = os.path.join(root_dir, 'data', 'Heat map 7.xlsx')
                 if os.path.exists(heatmap_file):
-                    fig, df_below, df_raw = create_heatmap_visualization(heatmap_file, side_cols=[4], left_margin=560)
+                    fig, df_below, df_raw = create_heatmap_visualization(heatmap_file, side_cols=[4], left_margin=560, one_decimal_first_col=True, force_decimals=3, no_gray_first_col=True)
                     if fig:
                         st.plotly_chart(fig, use_container_width=False, config={'scrollZoom': False})
                     if df_below is not None and not df_below.empty:
@@ -982,7 +1071,7 @@ with tab3:
     service_file = os.path.join(root_dir, 'data', 'Service Unit KPIs.xlsx')
     
     try:
-        html_services = excel_to_html_with_merged_cells(service_file, no_decimals=True)
+        html_services = excel_to_html_with_merged_cells(service_file, no_decimals=True, highlight_row_keyword='service unit key performance')
         st.markdown(html_services, unsafe_allow_html=True)
     except Exception as e:
         st.warning(f"Could not render with merged cells: {str(e)}")
