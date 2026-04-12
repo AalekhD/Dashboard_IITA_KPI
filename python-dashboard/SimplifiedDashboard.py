@@ -163,7 +163,7 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                                   data_col_start=4, program_col=3, group_col=2,
                                   kpi_row=3, kpi_group_row=2, data_row_start=4,
                                   show_row_groups=True, include_below_rows=True,
-                                  left_margin=None):
+                                  left_margin=None, side_cols=None):
     try:
         # Load with openpyxl to get clean numeric data
         wb = openpyxl.load_workbook(excel_file_path, data_only=True)
@@ -191,19 +191,38 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                     current_b = str(val)
                 b_values[row_idx] = current_b
 
-        # Get KPI names from kpi_row (starting from data_col_start)
+        # Get base KPI names and columns from kpi_row (starting from data_col_start)
+        base_kpi_cols = []
+        base_kpi_names = []
         for col_idx in range(data_col_start, ws.max_column + 1):
             cell_val = ws.cell(row=kpi_row, column=col_idx).value
             if cell_val is not None:
-                kpi_names.append(str(cell_val))
+                base_kpi_cols.append(col_idx)
+                base_kpi_names.append(str(cell_val))
+
+        # side_cols are absolute Excel column indices to include as uncolored side columns
+        side_cols = side_cols or []
+
+        # Build final included columns and kpi_names: side_cols first, then base KPI cols
+        included_cols = []
+        kpi_names = []
+        for c in side_cols:
+            hdr = ws.cell(row=kpi_row, column=c).value if kpi_row and ws.cell(row=kpi_row, column=c).value is not None else get_column_letter(c)
+            included_cols.append(c)
+            kpi_names.append(str(hdr))
+        included_cols.extend(base_kpi_cols)
+        kpi_names.extend(base_kpi_names)
 
         # Get KPI type groups from kpi_group_row (fill-forward for merged cells)
         current_type = None
-        for col_idx in range(data_col_start, data_col_start + len(kpi_names)):
-            val = ws.cell(row=kpi_group_row, column=col_idx).value
-            if val is not None:
-                current_type = str(val)
-            kpi_type_groups.append(current_type or "")
+        for c in included_cols:
+            if c in side_cols:
+                kpi_type_groups.append("")
+            else:
+                val = ws.cell(row=kpi_group_row, column=c).value
+                if val is not None:
+                    current_type = str(val)
+                kpi_type_groups.append(current_type or "")
 
         # Truncate to ~34 chars to match Excel row-3 height (191px) at 9pt font (~5.5px/char)
         def truncate_label(text, max_len=34):
@@ -244,7 +263,7 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                 program_groups.append(b_values.get(row_idx) or "" if group_col is not None else "")
                 row_data = []
                 orig_data = []  # stores (fval, raw_val) tuples
-                for col_idx in range(data_col_start, data_col_start + len(kpi_names)):
+                for col_idx in included_cols:
                     val = ws.cell(row=row_idx, column=col_idx).value
                     try:
                         fval = float(val) if val is not None else None
@@ -264,7 +283,7 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                     below_programs.append(str(program_cell))
                     row_data = []
                     orig_row = []  # stores (fval, raw_val) tuples
-                    for col_idx in range(data_col_start, data_col_start + len(kpi_names)):
+                    for col_idx in included_cols:
                         val = ws.cell(row=row_idx, column=col_idx).value
                         try:
                             fval = float(val) if val is not None else None
@@ -370,7 +389,24 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
             #   midpoint (per_program_target / 2)  -> 0.5 (yellow)
             #   per_program_target                 -> 1.0 (dark green)
             df_normalized = df_heatmap.copy()
+            # Mark side columns (absolute Excel indices in side_cols) as NaN so they are not colored
+            if side_cols:
+                try:
+                    for sc in side_cols:
+                        if sc in included_cols:
+                            pos = included_cols.index(sc)
+                            if pos < df_normalized.shape[1]:
+                                df_normalized.iloc[:, pos] = np.nan
+                except Exception:
+                    pass
             for col_i, col in enumerate(df_normalized.columns):
+                # If this column maps to a declared side column, skip normalization (leave NaN)
+                try:
+                    if side_cols and col_i < len(included_cols) and included_cols[col_i] in side_cols:
+                        df_normalized.iloc[:, col_i] = np.nan
+                        continue
+                except Exception:
+                    pass
                 # Use orig values (includes 0.0 correctly) to compute min
                 hm_orig_floats = pd.Series(
                     [all_original_values[r][col_i][0] for r in range(len(programs))
@@ -734,7 +770,7 @@ with tab2:
             try:
                 heatmap_file = os.path.join(root_dir, 'data', 'Heat map 2.xlsx')
                 if os.path.exists(heatmap_file):
-                    fig, df_below, df_raw = create_heatmap_visualization(heatmap_file)
+                    fig, df_below, df_raw = create_heatmap_visualization(heatmap_file, side_cols=[4])
                     if fig:
                         st.plotly_chart(fig, use_container_width=False, config={'scrollZoom': False})
                     if df_below is not None and not df_below.empty:
@@ -751,7 +787,7 @@ with tab2:
             try:
                 heatmap_file = os.path.join(root_dir, 'data', 'Heat map 3.xlsx')
                 if os.path.exists(heatmap_file):
-                    fig, df_below, df_raw = create_heatmap_visualization(heatmap_file)
+                    fig, df_below, df_raw = create_heatmap_visualization(heatmap_file, side_cols=[4])
                     if fig:
                         st.plotly_chart(fig, use_container_width=False, config={'scrollZoom': False})
                     if df_below is not None and not df_below.empty:
@@ -817,7 +853,7 @@ with tab2:
             try:
                 heatmap_file = os.path.join(root_dir, 'data', 'Heat map 6.xlsx')
                 if os.path.exists(heatmap_file):
-                    fig, df_below, df_raw = create_heatmap_visualization(heatmap_file)
+                    fig, df_below, df_raw = create_heatmap_visualization(heatmap_file, side_cols=[4])
                     if fig:
                         st.plotly_chart(fig, use_container_width=False, config={'scrollZoom': False})
                     if df_below is not None and not df_below.empty:
@@ -834,7 +870,7 @@ with tab2:
             try:
                 heatmap_file = os.path.join(root_dir, 'data', 'Heat map 7.xlsx')
                 if os.path.exists(heatmap_file):
-                    fig, df_below, df_raw = create_heatmap_visualization(heatmap_file)
+                    fig, df_below, df_raw = create_heatmap_visualization(heatmap_file, side_cols=[4])
                     if fig:
                         st.plotly_chart(fig, use_container_width=False, config={'scrollZoom': False})
                     if df_below is not None and not df_below.empty:
