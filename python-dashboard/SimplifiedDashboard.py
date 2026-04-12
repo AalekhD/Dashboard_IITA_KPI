@@ -140,7 +140,14 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False):
                             except Exception:
                                 cell_value = str(cell_value)
                         else:
-                            cell_value = str(cell_value)
+                            # Up to 3 decimal places; strip trailing zeros
+                            try:
+                                if cell_value == int(cell_value):
+                                    cell_value = str(int(cell_value))
+                                else:
+                                    cell_value = f"{cell_value:.3f}".rstrip('0').rstrip('.')
+                            except Exception:
+                                cell_value = str(cell_value)
                 else:
                     cell_value = str(cell_value)
             else:
@@ -397,14 +404,15 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
             #   midpoint (per_program_target / 2)  -> 0.5 (yellow)
             #   per_program_target                 -> 1.0 (dark green)
             df_normalized = df_heatmap.copy()
-            # Mark side columns (absolute Excel indices in side_cols) as NaN so they are not colored
+            # Mark side columns (absolute Excel indices in side_cols) as NaN for data rows so they are not colored
             if side_cols:
                 try:
                     for sc in side_cols:
                         if sc in included_cols:
                             pos = included_cols.index(sc)
                             if pos < df_normalized.shape[1]:
-                                df_normalized.iloc[:, pos] = np.nan
+                                # only NaN for the main heatmap rows; below-rows will get -1 later
+                                df_normalized.iloc[:len(programs), pos] = np.nan
                 except Exception:
                     pass
             for col_i, col in enumerate(df_normalized.columns):
@@ -452,6 +460,10 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                         span = target - midpoint
                         df_normalized.iloc[r, col_i] = 0.5 + 0.5 * (orig_fval - midpoint) / span if span > 0 else 0.75
 
+            # Force ALL cells in below-row rows to grey sentinel (-1.0) regardless of column type
+            if len(below_programs) > 0:
+                df_normalized.iloc[len(programs):, :] = -1.0
+
             # Extended colorscale: grey for below-row sentinel (-1), then red→green for data (0..1)
             # With zmin=-1, zmax=1 the normalised position = (v+1)/2:
             #   v=-1  → pos 0.00  (grey, below-row rows)
@@ -472,21 +484,18 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
 
             # Smart numeric formatter — preserves significant figures for small values
             def fmt_val(v):
+                """Format a number to at most 3 decimal places.
+                Integers display without decimal point; very small values use 2 s.f. scientific."""
                 if v == 0:
                     return '0'
                 abs_v = abs(v)
-                if abs_v < 0.001:
-                    return f"{v:.3e}"          # e.g. 7.519e-04
-                elif abs_v < 0.01:
-                    return f"{v:.6f}".rstrip('0').rstrip('.')  # e.g. 0.007519
-                elif abs_v < 0.1:
-                    return f"{v:.4f}".rstrip('0').rstrip('.')  # e.g. 0.0752
-                elif abs_v < 1:
-                    return f"{v:.3f}".rstrip('0').rstrip('.')  # e.g. 0.752
+                if abs_v < 0.0005:
+                    # Too small for 3 dp — use 2 sig-fig scientific
+                    return f"{v:.2e}"
                 elif v == int(v):
-                    return str(int(v))                          # e.g. 15
+                    return str(int(v))          # whole number, no decimal
                 else:
-                    return f"{v:.1f}"                          # e.g. 15.5
+                    return f"{v:.3f}".rstrip('0').rstrip('.')  # up to 3 dp, strip trailing zeros
 
             # Build text display
             text_display = []
@@ -525,6 +534,24 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                 xgap=2,
                 ygap=2
             )
+
+            # Add a separate text-only trace for below-row cells so their text is always visible on grey
+            if len(below_programs) > 0:
+                below_text = text_display[len(programs):]
+                fig.add_trace(go.Heatmap(
+                    z=np.full((len(below_programs), len(kpi_names)), np.nan),
+                    x=kpi_names,
+                    y=all_programs[len(programs):],
+                    text=np.array(below_text, dtype=object),
+                    texttemplate='%{text}',
+                    textfont=dict(size=16, color='#333333'),
+                    showscale=False,
+                    coloraxis=None,
+                    colorscale=[[0, 'rgba(0,0,0,0)'], [1, 'rgba(0,0,0,0)']],
+                    zmin=0, zmax=1,
+                    xgap=2, ygap=2,
+                    hoverinfo='skip',
+                ))
 
             # LABEL_PX: at -45� with wrapped labels, project max lines * line_height * sin(45�)
             LINE_H_PX = 12  # approx line height in px at 9pt
