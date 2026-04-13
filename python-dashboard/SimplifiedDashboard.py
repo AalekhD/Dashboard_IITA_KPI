@@ -1055,7 +1055,7 @@ def render_gray_table(df):
 df_programs, df_services, df_heatmap = load_kpi_data()
 
 # Tabs
-tab1, tab2, tab3 = st.tabs(["📊 2025 Program Output KPIs (Aggregate)", "🌡️ 2025 Program Output KPI (by Program)", "🏢 2025 Service Unit KPIs"])
+tab1, tab2, tab3, tab4 = st.tabs(["📊 2025 Program Output KPIs (Aggregate)", "🌡️ 2025 Program Output KPI (by Program)", "🏢 2025 Service Unit KPIs", "💬 Chat"])
 
 # Programs Tab
 with tab1:
@@ -1095,7 +1095,7 @@ with tab2:
     with sub_tab_a:
         st.markdown("### Research, Training, Product Development")
         
-        rtpd_tabs = st.tabs(["KPI by Number", "KPI By Full Time Equivalent", "KPI Bu million(USD)", "KPI over Time"])
+        rtpd_tabs = st.tabs(["KPI by Number", "KPI by Full Time Equivalent", "KPI by million(USD)", "KPI over Time"])
         
         root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         
@@ -1117,7 +1117,7 @@ with tab2:
                 st.warning(f"Could not load heatmap: {str(e)}")
 
         with rtpd_tabs[1]:
-            st.write("**Research, Training, Product Development - KPI By Full Time Equivalent**")
+            st.write("**Research, Training, Product Development - KPI by Full Time Equivalent**")
             try:
                 heatmap_file = os.path.join(root_dir, 'data', 'Heat map 2.xlsx')
                 if os.path.exists(heatmap_file):
@@ -1134,7 +1134,7 @@ with tab2:
                 st.warning(f"Could not load heatmap: {str(e)}")
 
         with rtpd_tabs[2]:
-            st.write("**Research, Training, Product Development - KPI Bu million(USD)**")
+            st.write("**Research, Training, Product Development - KPI by million(USD)**")
             try:
                 heatmap_file = os.path.join(root_dir, 'data', 'Heat map 3.xlsx')
                 if os.path.exists(heatmap_file):
@@ -1236,7 +1236,7 @@ with tab2:
     with sub_tab_b:
         st.markdown("### Recognition, Societal Impact & Inclusivity")
         
-        rsi_tabs = st.tabs(["KPI by Number", "KPI By Full Time Equivalent", "KPI Bu million(USD)", "KPI over Time"])
+        rsi_tabs = st.tabs(["KPI by Number", "KPI by Full Time Equivalent", "KPI by million(USD)", "KPI over Time"])
         
         root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         
@@ -1258,7 +1258,7 @@ with tab2:
                 st.warning(f"Could not load heatmap: {str(e)}")
 
         with rsi_tabs[1]:
-            st.write("**Recognition, Societal Impact & Inclusivity - KPI By Full Time Equivalent**")
+            st.write("**Recognition, Societal Impact & Inclusivity - KPI by Full Time Equivalent**")
             try:
                 heatmap_file = os.path.join(root_dir, 'data', 'Heat map 6.xlsx')
                 if os.path.exists(heatmap_file):
@@ -1275,7 +1275,7 @@ with tab2:
                 st.warning(f"Could not load heatmap: {str(e)}")
 
         with rsi_tabs[2]:
-            st.write("**Recognition, Societal Impact & Inclusivity - KPI Bu million(USD)**")
+            st.write("**Recognition, Societal Impact & Inclusivity - KPI by million(USD)**")
             try:
                 heatmap_file = os.path.join(root_dir, 'data', 'Heat map 7.xlsx')
                 if os.path.exists(heatmap_file):
@@ -1562,6 +1562,62 @@ with tab3:
         file_name="2025_Service_Unit_KPIs.csv",
         mime="text/csv"
     )
+
+# Chat Tab
+with tab4:
+    st.subheader("💬 Chat — Ask about the Dashboard")
+
+    if 'chat_history' not in st.session_state:
+        st.session_state.chat_history = []
+
+    # Check for OpenAI API key
+    openai_key = os.getenv('OPENAI_API_KEY')
+    if not openai_key:
+        st.info('To enable chatbot, set the OPENAI_API_KEY environment variable.')
+    else:
+        try:
+            import openai
+        except Exception:
+            st.warning('`openai` package not installed. Install with `pip install openai` to enable chat.')
+            openai = None
+
+        if openai:
+            openai.api_key = openai_key
+
+            # Input area
+            user_input = st.text_input('Ask a question about the dashboard or data:', key='chat_input')
+            send = st.button('Send')
+
+            if send and st.session_state.get('chat_input'):
+                # Build messages from history
+                messages = [{'role': 'system', 'content': 'You are a helpful assistant for the IITA KPI Dashboard.'}]
+                for role, text in st.session_state.chat_history:
+                    messages.append({'role': role, 'content': text})
+                messages.append({'role': 'user', 'content': st.session_state.chat_input})
+
+                with st.spinner('Thinking...'):
+                    try:
+                        resp = openai.ChatCompletion.create(
+                            model='gpt-3.5-turbo',
+                            messages=messages,
+                            max_tokens=512,
+                            temperature=0.2,
+                        )
+                        answer = resp.choices[0].message['content'].strip()
+                    except Exception as e:
+                        answer = f"Error from LLM: {e}"
+
+                # Save and clear
+                st.session_state.chat_history.append(('user', st.session_state.chat_input))
+                st.session_state.chat_history.append(('assistant', answer))
+                st.session_state.chat_input = ''
+
+            # Render chat history
+            for role, text in st.session_state.chat_history:
+                if role == 'user':
+                    st.markdown(f"**You:** {text}")
+                else:
+                    st.markdown(f"**Assistant:** {text}")
 
 st.markdown("---")
 st.caption("Last updated: April 8, 2026 | IITA KPI Dashboard")
