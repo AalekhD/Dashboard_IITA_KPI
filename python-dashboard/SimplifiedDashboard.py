@@ -1417,34 +1417,108 @@ with tab3:
                     new_rows[row_idx] = new_r
                     continue
 
-                # For first two data rows: left-align all cells
+                # For first two data rows: left-align non-numeric cells, but keep numeric cells right-aligned
                 if i < 2:
-                    def left_all(m):
-                        return update_tag_alignment(m.group(0), 'left')
-                    new_r = re.sub(r'(<t[dh][^>]*>)', left_all, new_r, flags=re.IGNORECASE)
+                    # process full cell tags to decide per-cell alignment
+                    cell_pattern_local = re.compile(r'(<t[dh][^>]*>)(.*?)(</t[dh]>)', flags=re.IGNORECASE | re.DOTALL)
+                    parts_local = []
+                    last_end_local = 0
+                    tags_local = list(cell_pattern_local.finditer(new_r))
+                    if tags_local:
+                        for m2 in tags_local:
+                            s2, e2 = m2.span(1)
+                            open_tag = m2.group(1)
+                            inner = m2.group(2)
+                            close_tag = m2.group(3)
+                            # determine colspan
+                            cs2 = re.search(r'colspan\s*=\s*"(\d+)"', open_tag, flags=re.IGNORECASE)
+                            span2 = int(cs2.group(1)) if cs2 else 1
 
-                # For last two logical columns: ensure those cells are right-aligned
-                # Parse cell tags and their colspan to map logical column positions
-                tags = list(re.finditer(r'(<t[dh][^>]*>)', new_r, flags=re.IGNORECASE))
+                            inner_text = re.sub(r'<[^>]+>', '', inner or '').strip()
+                            cleaned = inner_text.replace('\u00A0', '').replace('\xa0', '').replace(',', '').strip()
+                            if cleaned.startswith('(') and cleaned.endswith(')'):
+                                cleaned_num = '-' + cleaned[1:-1]
+                            else:
+                                cleaned_num = cleaned
+                            if cleaned_num.endswith('%'):
+                                cleaned_num = cleaned_num[:-1]
+                            is_numeric_local = False
+                            try:
+                                if cleaned_num != '':
+                                    float(cleaned_num)
+                                    is_numeric_local = True
+                            except Exception:
+                                is_numeric_local = False
+
+                            # choose alignment
+                            if is_numeric_local:
+                                new_open = update_tag_alignment(open_tag, 'right')
+                            else:
+                                new_open = update_tag_alignment(open_tag, 'left')
+
+                            parts_local.append(new_r[last_end_local:s2])
+                            parts_local.append(new_open)
+                            parts_local.append(inner)
+                            parts_local.append(close_tag)
+                            last_end_local = e2 + len(m2.group(2)) + len(m2.group(3))
+                        parts_local.append(new_r[last_end_local:])
+                        new_r = ''.join(parts_local)
+
+                # For last two logical columns and numeric cells: ensure right-alignment
+                # Parse full cell tags (open, inner, close) to map logical column positions
+                cell_pattern = re.compile(r'(<t[dh][^>]*>)(.*?)(</t[dh]>)', flags=re.IGNORECASE | re.DOTALL)
+                tags = list(cell_pattern.finditer(new_r))
                 if tags:
                     col_pos = 1
                     parts = []
                     last_end = 0
+                    min_last = min(last_two_positions)
                     for m in tags:
                         s, e = m.span(1)
-                        tag = m.group(1)
+                        open_tag = m.group(1)
+                        inner = m.group(2)
+                        close_tag = m.group(3)
                         # determine colspan
-                        cs = re.search(r'colspan\s*=\s*"(\d+)"', tag, flags=re.IGNORECASE)
+                        cs = re.search(r'colspan\s*=\s*"(\d+)"', open_tag, flags=re.IGNORECASE)
                         span = int(cs.group(1)) if cs else 1
                         tag_start = col_pos
                         tag_end = col_pos + span - 1
-                        # align right only if the tag starts within the last two logical columns
-                        min_last = min(last_two_positions)
+
+                        # Skip center/left rules already applied for green rows and first two rows
+                        # Detect numeric content robustly (commas, NBSP, parentheses, percent)
+                        inner_text = re.sub(r'<[^>]+>', '', inner or '').strip()
+                        is_numeric = False
+                        if inner_text:
+                            # normalize whitespace and non-breaking spaces
+                            cleaned = inner_text.replace('\u00A0', '').replace('\xa0', '').replace(',', '').strip()
+                            # handle parentheses negative like (123)
+                            if cleaned.startswith('(') and cleaned.endswith(')'):
+                                cleaned_num = '-' + cleaned[1:-1]
+                            else:
+                                cleaned_num = cleaned
+                            # strip percent
+                            if cleaned_num.endswith('%'):
+                                cleaned_num = cleaned_num[:-1]
+                            # try float parse
+                            try:
+                                float(cleaned_num)
+                                is_numeric = True
+                            except Exception:
+                                is_numeric = False
+
+                        new_open = open_tag
+                        # Priority: if cell starts within last-two logical cols -> right
+                        # Else if numeric and this row isn't in first-two -> right
                         if tag_start >= min_last:
-                            tag = update_tag_alignment(tag, 'right')
+                            new_open = update_tag_alignment(new_open, 'right')
+                        elif is_numeric and i >= 2:
+                            new_open = update_tag_alignment(new_open, 'right')
+
                         parts.append(new_r[last_end:s])
-                        parts.append(tag)
-                        last_end = e
+                        parts.append(new_open)
+                        parts.append(inner)
+                        parts.append(close_tag)
+                        last_end = e + len(m.group(2)) + len(m.group(3))
                         col_pos += span
                     parts.append(new_r[last_end:])
                     new_r = ''.join(parts)
