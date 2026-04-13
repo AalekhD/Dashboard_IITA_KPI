@@ -1355,62 +1355,102 @@ with tab3:
         # - last two data rows: right-aligned
         # - any row highlighted with the green background: center-aligned
         def adjust_service_alignment(html):
-            rows = re.findall(r'(<tr>.*?</tr>)', html, flags=re.DOTALL)
+            rows = re.findall(r'(<tr.*?>.*?</tr>)', html, flags=re.DOTALL | re.IGNORECASE)
             if not rows:
                 return html
+
             # find first data row index (first row that contains a <td>)
             data_start = 0
             for idx, r in enumerate(rows):
                 if '<td' in r.lower():
                     data_start = idx
                     break
+
+            # determine total logical columns from the header rows (before data_start)
+            total_cols = 0
+            for hdr_idx in range(data_start):
+                hdr = rows[hdr_idx]
+                th_tags = re.findall(r'<th[^>]*>', hdr, flags=re.IGNORECASE)
+                if th_tags:
+                    # use the last header row that contains <th>
+                    total_cols = 0
+                    for tag in th_tags:
+                        cs = re.search(r'colspan\s*=\s*"(\d+)"', tag, flags=re.IGNORECASE)
+                        total_cols += int(cs.group(1)) if cs else 1
+
+            if total_cols == 0:
+                # fallback: count <td> in first data row ignoring colspan
+                first_data = rows[data_start] if data_start < len(rows) else ''
+                total_cols = len(re.findall(r'<t[dh][^>]*>', first_data, flags=re.IGNORECASE))
+
             data_rows = rows[data_start:]
             n = len(data_rows)
             new_rows = rows.copy()
 
-            def ensure_right_align_tag(tag):
-                if 'style=' in tag.lower():
+            def update_tag_alignment(tag, align):
+                # update or add text-align in the tag's style attribute
+                if re.search(r'style\s*=\s*"', tag, flags=re.IGNORECASE):
                     def repl(m):
                         styles = m.group(1)
-                        if 'text-align' in styles.lower():
-                            styles = re.sub(r'text-align\s*:\s*[^;]+', 'text-align: right', styles, flags=re.IGNORECASE)
+                        if re.search(r'text-align\s*:', styles, flags=re.IGNORECASE):
+                            styles = re.sub(r'text-align\s*:\s*[^;]+', f'text-align: {align}', styles, flags=re.IGNORECASE)
                         else:
-                            styles = styles.rstrip() + '; text-align: right'
+                            styles = styles.rstrip() + f'; text-align: {align}'
                         return f'style="{styles}"'
-                    return re.sub(r'style="([^"]*)"', repl, tag, flags=re.IGNORECASE)
+                    return re.sub(r'style\s*=\s*"([^"]*)"', repl, tag, flags=re.IGNORECASE)
                 else:
-                    return tag[:-1] + ' style="text-align: right;">'
+                    # insert style before closing bracket
+                    return tag[:-1] + f' style="text-align: {align};">'
+
+            last_two_positions = {total_cols - 1, total_cols} if total_cols >= 2 else {total_cols}
 
             for i, r in enumerate(data_rows):
                 row_idx = data_start + i
                 new_r = r
-                # set first two data rows left
-                if i < 2:
-                    new_r = re.sub(r'text-align:\s*[^;"\']+', 'text-align: left', new_r, flags=re.IGNORECASE)
-                # set last two data rows right
-                if i >= n - 2:
-                    new_r = re.sub(r'text-align:\s*[^;"\']+', 'text-align: right', new_r, flags=re.IGNORECASE)
-                # if row contains green highlight, center it
-                if '#00891a' in new_r.lower() or 'background-color: #00891a' in new_r.lower():
-                    new_r = re.sub(r'text-align:\s*[^;"\']+', 'text-align: center', new_r, flags=re.IGNORECASE)
 
-                # Force last two columns to be right-aligned by updating last two <td>/<th> tags
-                cell_tags = list(re.finditer(r'(<t[dh][^>]*>)', new_r, flags=re.IGNORECASE))
-                if len(cell_tags) >= 2:
+                # If row contains green highlight, center entire row
+                if '#00891a' in new_r.lower() or 'background-color: #00891a' in new_r.lower():
+                    # set all cell tags to center
+                    def center_all(m):
+                        return update_tag_alignment(m.group(0), 'center')
+                    new_r = re.sub(r'(<t[dh][^>]*>)', center_all, new_r, flags=re.IGNORECASE)
+                    new_rows[row_idx] = new_r
+                    continue
+
+                # For first two data rows: left-align all cells
+                if i < 2:
+                    def left_all(m):
+                        return update_tag_alignment(m.group(0), 'left')
+                    new_r = re.sub(r'(<t[dh][^>]*>)', left_all, new_r, flags=re.IGNORECASE)
+
+                # For last two logical columns: ensure those cells are right-aligned
+                # Parse cell tags and their colspan to map logical column positions
+                tags = list(re.finditer(r'(<t[dh][^>]*>)', new_r, flags=re.IGNORECASE))
+                if tags:
+                    col_pos = 1
                     parts = []
                     last_end = 0
-                    for idx_tag, m in enumerate(cell_tags):
+                    for m in tags:
                         s, e = m.span(1)
-                        parts.append(new_r[last_end:s])
                         tag = m.group(1)
-                        if idx_tag >= len(cell_tags) - 2:
-                            tag = ensure_right_align_tag(tag)
+                        # determine colspan
+                        cs = re.search(r'colspan\s*=\s*"(\d+)"', tag, flags=re.IGNORECASE)
+                        span = int(cs.group(1)) if cs else 1
+                        tag_start = col_pos
+                        tag_end = col_pos + span - 1
+                        # align right only if the tag starts within the last two logical columns
+                        min_last = min(last_two_positions)
+                        if tag_start >= min_last:
+                            tag = update_tag_alignment(tag, 'right')
+                        parts.append(new_r[last_end:s])
                         parts.append(tag)
                         last_end = e
+                        col_pos += span
                     parts.append(new_r[last_end:])
                     new_r = ''.join(parts)
 
                 new_rows[row_idx] = new_r
+
             # replace rows in original HTML sequentially
             new_html = html
             for orig, new in zip(rows, new_rows):
