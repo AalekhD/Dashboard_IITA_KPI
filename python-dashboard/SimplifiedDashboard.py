@@ -179,13 +179,27 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
 
             # Add styling for headers (first row)
             if row_idx == 1:
-                html += f'<th style="background-color: #00891a; color: white; font-weight: bold; text-align: center;" rowspan="{rowspan}" colspan="{colspan}">{cell_value}</th>'
+                # For green header cells: if original value is numeric and >=1000, remove thousands separators
+                header_display = cell_value
+                try:
+                    if isinstance(cell_data.value, (int, float)) and abs(cell_data.value) >= 1000:
+                        header_display = str(header_display).replace(',', '')
+                except Exception:
+                    pass
+                # make column header font slightly larger
+                html += f'<th style="background-color: #00891a; color: white; font-weight: bold; text-align: center; font-size: 11pt;" rowspan="{rowspan}" colspan="{colspan}">{header_display}</th>'
             else:
-                # If this row matches the highlight keyword, make its cells green with white text
+                # Build inline style for this cell
+                styles = []
                 if highlight_row:
-                    html += f'<td style="background-color: #00891a; color: white; text-align: {align};" rowspan="{rowspan}" colspan="{colspan}">{cell_value}</td>'
-                else:
-                    html += f'<td style="text-align: {align};" rowspan="{rowspan}" colspan="{colspan}">{cell_value}</td>'
+                    styles.append('background-color: #00891a')
+                    styles.append('color: white')
+                styles.append(f'text-align: {align}')
+                # First column cells (row headers) should have slightly larger font
+                if col_idx == 1:
+                    styles.append('font-size: 11pt')
+                style_attr = '; '.join(styles)
+                html += f'<td style="{style_attr};" rowspan="{rowspan}" colspan="{colspan}">{cell_value}</td>'
         
         html += '</tr>'
     
@@ -875,14 +889,14 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                     tickmode='array',
                     tickvals=kpi_names,
                     ticktext=kpi_tick_names,
-                    tickfont=dict(size=10 if short_labels else 9),
+                    tickfont=dict(size=10),
                     automargin=False,
                     showgrid=False,
                     zeroline=False,
                     showline=False,
                 ),
                 yaxis=dict(
-                    tickfont=dict(size=9),
+                    tickfont=dict(size=10),
                     tickmode='array',
                     tickvals=all_programs,
                     ticktext=y_labels_wrapped,
@@ -1081,12 +1095,12 @@ with tab2:
     with sub_tab_a:
         st.markdown("### Research, Training, Product Development")
         
-        rtpd_tabs = st.tabs(["KPI by Nr", "KPI by FTE", "KPI by $", "KPI over Time"])
+        rtpd_tabs = st.tabs(["KPI by Number", "KPI By Full Time Equivalent", "KPI Bu million(USD)", "KPI over Time"])
         
         root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         
         with rtpd_tabs[0]:
-            st.write("**Research, Training, Product Development - KPI by Nr**")
+            st.write("**Research, Training, Product Development - KPI by Number**")
             try:
                 heatmap_file = os.path.join(root_dir, 'data', 'Heat map 1.xlsx')
                 if os.path.exists(heatmap_file):
@@ -1103,7 +1117,7 @@ with tab2:
                 st.warning(f"Could not load heatmap: {str(e)}")
 
         with rtpd_tabs[1]:
-            st.write("**Research, Training, Product Development - KPI by FTE**")
+            st.write("**Research, Training, Product Development - KPI By Full Time Equivalent**")
             try:
                 heatmap_file = os.path.join(root_dir, 'data', 'Heat map 2.xlsx')
                 if os.path.exists(heatmap_file):
@@ -1120,7 +1134,7 @@ with tab2:
                 st.warning(f"Could not load heatmap: {str(e)}")
 
         with rtpd_tabs[2]:
-            st.write("**Research, Training, Product Development - KPI by $**")
+            st.write("**Research, Training, Product Development - KPI Bu million(USD)**")
             try:
                 heatmap_file = os.path.join(root_dir, 'data', 'Heat map 3.xlsx')
                 if os.path.exists(heatmap_file):
@@ -1143,7 +1157,6 @@ with tab2:
                 heatmap_file_4_1 = os.path.join(root_dir, 'data', 'Heat map 4-1 Research Outputs.xlsx')
                 heatmap_choice = heatmap_file_4_1 if os.path.exists(heatmap_file_4_1) else heatmap_file
                 if os.path.exists(heatmap_choice):
-                    st.caption(f"Using file: {os.path.basename(heatmap_choice)}")
                     # Provide three focused KPI-over-time sub-tabs so users can
                     # view Research Outputs, Capacity Building, and Product
                     # Development separately.
@@ -1223,12 +1236,12 @@ with tab2:
     with sub_tab_b:
         st.markdown("### Recognition, Societal Impact & Inclusivity")
         
-        rsi_tabs = st.tabs(["KPI by Nr", "KPI by FTE", "KPI by $", "KPI over Time"])
+        rsi_tabs = st.tabs(["KPI by Number", "KPI By Full Time Equivalent", "KPI Bu million(USD)", "KPI over Time"])
         
         root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         
         with rsi_tabs[0]:
-            st.write("**Recognition, Societal Impact & Inclusivity - KPI by Nr**")
+            st.write("**Recognition, Societal Impact & Inclusivity - KPI by Number**")
             try:
                 heatmap_file = os.path.join(root_dir, 'data', 'Heat map 5.xlsx')
                 if os.path.exists(heatmap_file):
@@ -1245,7 +1258,7 @@ with tab2:
                 st.warning(f"Could not load heatmap: {str(e)}")
 
         with rsi_tabs[1]:
-            st.write("**Recognition, Societal Impact & Inclusivity - KPI by FTE**")
+            st.write("**Recognition, Societal Impact & Inclusivity - KPI By Full Time Equivalent**")
             try:
                 heatmap_file = os.path.join(root_dir, 'data', 'Heat map 6.xlsx')
                 if os.path.exists(heatmap_file):
@@ -1262,7 +1275,7 @@ with tab2:
                 st.warning(f"Could not load heatmap: {str(e)}")
 
         with rsi_tabs[2]:
-            st.write("**Recognition, Societal Impact & Inclusivity - KPI by $**")
+            st.write("**Recognition, Societal Impact & Inclusivity - KPI Bu million(USD)**")
             try:
                 heatmap_file = os.path.join(root_dir, 'data', 'Heat map 7.xlsx')
                 if os.path.exists(heatmap_file):
