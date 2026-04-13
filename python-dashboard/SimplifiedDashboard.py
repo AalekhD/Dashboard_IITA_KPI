@@ -6,6 +6,7 @@ import openpyxl
 from openpyxl.utils import get_column_letter
 import os
 import numpy as np
+import re
 
 # Page config
 st.set_page_config(page_title="IITA KPI Dashboard", layout="wide")
@@ -71,6 +72,7 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
     
     # Build HTML table
     html = '<table style="border-collapse: collapse; width: 100%; table-layout: fixed; font-family: Arial, sans-serif; background-color: white;">'
+    # Default styles remain left-aligned; we'll override per-cell below
     html += '<style>td, th { border: 1px solid #999; padding: 12px; text-align: left; background-color: white; white-space: normal; word-wrap: break-word; word-break: break-word; overflow-wrap: break-word; color: black; font-size: 9pt; }</style>'
     
     processed = set()
@@ -165,15 +167,25 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
             else:
                 cell_value = ""
             
+            # Determine if original cell was numeric so we can align numbers right
+            is_numeric = isinstance(cell_data.value, (int, float))
+            # Column-based rule: first three columns should be left-aligned
+            if col_idx <= 3:
+                align = 'left'
+            elif is_numeric:
+                align = 'right'
+            else:
+                align = 'left'
+
             # Add styling for headers (first row)
             if row_idx == 1:
-                html += f'<th style="background-color: #00891a; color: white; font-weight: bold;" rowspan="{rowspan}" colspan="{colspan}">{cell_value}</th>'
+                html += f'<th style="background-color: #00891a; color: white; font-weight: bold; text-align: center;" rowspan="{rowspan}" colspan="{colspan}">{cell_value}</th>'
             else:
                 # If this row matches the highlight keyword, make its cells green with white text
                 if highlight_row:
-                    html += f'<td style="background-color: #00891a; color: white;" rowspan="{rowspan}" colspan="{colspan}">{cell_value}</td>'
+                    html += f'<td style="background-color: #00891a; color: white; text-align: {align};" rowspan="{rowspan}" colspan="{colspan}">{cell_value}</td>'
                 else:
-                    html += f'<td rowspan="{rowspan}" colspan="{colspan}">{cell_value}</td>'
+                    html += f'<td style="text-align: {align};" rowspan="{rowspan}" colspan="{colspan}">{cell_value}</td>'
         
         html += '</tr>'
     
@@ -1337,11 +1349,76 @@ with tab3:
     
     try:
         html_services = excel_to_html_with_merged_cells(service_file, no_decimals=True, highlight_row_keyword='service unit key performance')
-        # Right-align data cells while keeping headers left-aligned
-        html_services = html_services.replace(
-            '<style>td, th { border: 1px solid #999; padding: 12px; text-align: left; background-color: white; white-space: normal; word-wrap: break-word; word-break: break-word; overflow-wrap: break-word; color: black; font-size: 9pt; }</style>',
-            '<style>td { border: 1px solid #999; padding: 12px; text-align: right; background-color: white; white-space: normal; word-wrap: break-word; word-break: break-word; overflow-wrap: break-word; color: black; font-size: 9pt; } th { border: 1px solid #999; padding: 12px; text-align: left; background-color: white; white-space: normal; word-wrap: break-word; word-break: break-word; overflow-wrap: break-word; color: black; font-size: 9pt; }</style>'
-        )
+
+        # Adjust alignment for Service Unit KPIs table:
+        # - first two data rows: left-aligned
+        # - last two data rows: right-aligned
+        # - any row highlighted with the green background: center-aligned
+        def adjust_service_alignment(html):
+            rows = re.findall(r'(<tr>.*?</tr>)', html, flags=re.DOTALL)
+            if not rows:
+                return html
+            # find first data row index (first row that contains a <td>)
+            data_start = 0
+            for idx, r in enumerate(rows):
+                if '<td' in r.lower():
+                    data_start = idx
+                    break
+            data_rows = rows[data_start:]
+            n = len(data_rows)
+            new_rows = rows.copy()
+
+            def ensure_right_align_tag(tag):
+                if 'style=' in tag.lower():
+                    def repl(m):
+                        styles = m.group(1)
+                        if 'text-align' in styles.lower():
+                            styles = re.sub(r'text-align\s*:\s*[^;]+', 'text-align: right', styles, flags=re.IGNORECASE)
+                        else:
+                            styles = styles.rstrip() + '; text-align: right'
+                        return f'style="{styles}"'
+                    return re.sub(r'style="([^"]*)"', repl, tag, flags=re.IGNORECASE)
+                else:
+                    return tag[:-1] + ' style="text-align: right;">'
+
+            for i, r in enumerate(data_rows):
+                row_idx = data_start + i
+                new_r = r
+                # set first two data rows left
+                if i < 2:
+                    new_r = re.sub(r'text-align:\s*[^;"\']+', 'text-align: left', new_r, flags=re.IGNORECASE)
+                # set last two data rows right
+                if i >= n - 2:
+                    new_r = re.sub(r'text-align:\s*[^;"\']+', 'text-align: right', new_r, flags=re.IGNORECASE)
+                # if row contains green highlight, center it
+                if '#00891a' in new_r.lower() or 'background-color: #00891a' in new_r.lower():
+                    new_r = re.sub(r'text-align:\s*[^;"\']+', 'text-align: center', new_r, flags=re.IGNORECASE)
+
+                # Force last two columns to be right-aligned by updating last two <td>/<th> tags
+                cell_tags = list(re.finditer(r'(<t[dh][^>]*>)', new_r, flags=re.IGNORECASE))
+                if len(cell_tags) >= 2:
+                    parts = []
+                    last_end = 0
+                    for idx_tag, m in enumerate(cell_tags):
+                        s, e = m.span(1)
+                        parts.append(new_r[last_end:s])
+                        tag = m.group(1)
+                        if idx_tag >= len(cell_tags) - 2:
+                            tag = ensure_right_align_tag(tag)
+                        parts.append(tag)
+                        last_end = e
+                    parts.append(new_r[last_end:])
+                    new_r = ''.join(parts)
+
+                new_rows[row_idx] = new_r
+            # replace rows in original HTML sequentially
+            new_html = html
+            for orig, new in zip(rows, new_rows):
+                if orig != new:
+                    new_html = new_html.replace(orig, new, 1)
+            return new_html
+
+        html_services = adjust_service_alignment(html_services)
         st.markdown(html_services, unsafe_allow_html=True)
     except Exception as e:
         st.warning(f"Could not render with merged cells: {str(e)}")
