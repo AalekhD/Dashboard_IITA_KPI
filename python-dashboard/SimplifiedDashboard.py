@@ -194,6 +194,7 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                 if highlight_row:
                     styles.append('background-color: #00891a')
                     styles.append('color: white')
+                    styles.append('font-weight: bold')
                 styles.append(f'text-align: {align}')
                 # First column cells (row headers) should have slightly larger font
                 if col_idx == 1:
@@ -953,8 +954,9 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                     type='line',
                     xref='x', yref='paper',
                     x0=end_idx + 0.5, x1=end_idx + 0.5,
+                    # extend the vertical divider up to the KPI group header band
                     y0=0.0, y1=band_y1,
-                    line=dict(color='black', width=2),
+                    line=dict(color='#000000', width=2),
                     layer='above'
                 )
 
@@ -973,28 +975,32 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                         continue
                     end_idx = min(end_idx, len(programs) - 1)
                     color = left_group_colors[idx % len(left_group_colors)]
-                    y_center = (start_idx + end_idx) / 2
+                    y_center_index = int(round((start_idx + end_idx) / 2))
+                    y_center_label = all_programs[y_center_index] if y_center_index < len(all_programs) else all_programs[-1]
                     # Left group: no fill, larger black horizontal label anchored to the right
                     fig.add_shape(
                         type='rect',
                         xref='paper', yref='y',
                         x0=gx_outer, x1=gx_inner,
-                        y0=start_idx - 0.5, y1=end_idx + 0.5,
+                        y0=all_programs[start_idx], y1=all_programs[end_idx],
                         fillcolor='rgba(0,0,0,0)',
                         line=dict(color='rgba(0,0,0,0)', width=0),
                         layer='above'
                     )
                     # Wrap long group names so they don't overflow and anchor to the right
                     wrapped_left = '<br>'.join(f'<b>{line}</b>' for line in wrap_label(group_name, max_len=12).split('<br>'))
+                    # Position group header further left to avoid overlapping program text
+                    ann_x = gx_outer + 0.02
                     fig.add_annotation(
                         xref='paper', yref='y',
-                        x=gx_ann, y=y_center,
+                        x=ann_x, y=y_center_label,
                         text=wrapped_left,
                         showarrow=False,
                         font=dict(color='black', size=12, family='Arial Black, Arial, sans-serif'),
-                        align='center',
-                        xanchor='right',
+                        align='left',
+                        xanchor='left',
                         textangle=0,
+                        yanchor='middle',
                         bgcolor='rgba(0,0,0,0)'
                     )
                     # Add a thick black horizontal line at the end of this row group
@@ -1002,9 +1008,11 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                     fig.add_shape(
                         type='line',
                         xref='paper', yref='y',
+                        # Draw the horizontal connector across the entire data block
                         x0=gx_outer, x1=1.0,
+                        # place on the row boundary so it does not run through cells
                         y0=end_idx + 0.5, y1=end_idx + 0.5,
-                        line=dict(color='black', width=2),
+                        line=dict(color='#000000', width=2),
                         layer='above'
                     )
 
@@ -1106,7 +1114,7 @@ with tab2:
                 if os.path.exists(heatmap_file):
                     fig, df_below, df_raw = create_heatmap_visualization(heatmap_file, zero_decimal_cols=['Thompson', 'Thomson'], one_decimal_cols=['per IRS', 'per irs'], zero_decimal_rows=['per program target', 'per programme target'])
                     if fig:
-                        st.plotly_chart(fig, use_container_width=False, config={'scrollZoom': False, 'displayModeBar': False, 'editable': False})
+                        st.plotly_chart(fig, use_container_width=False, config={'staticPlot': True})
                     if df_below is not None and not df_below.empty:
                         st.markdown("---")
                         st.markdown("**Additional Data**")
@@ -1123,7 +1131,7 @@ with tab2:
                 if os.path.exists(heatmap_file):
                     fig, df_below, df_raw = create_heatmap_visualization(heatmap_file, side_cols=[4], force_decimals=2, suppress_pct_display=True, one_decimal_first_col=True, no_gray_first_col=True)
                     if fig:
-                        st.plotly_chart(fig, use_container_width=False, config={'scrollZoom': False, 'displayModeBar': False, 'editable': False})
+                        st.plotly_chart(fig, use_container_width=False, config={'staticPlot': True})
                     if df_below is not None and not df_below.empty:
                         st.markdown("---")
                         st.markdown("**Additional Data**")
@@ -1140,7 +1148,7 @@ with tab2:
                 if os.path.exists(heatmap_file):
                     fig, df_below, df_raw = create_heatmap_visualization(heatmap_file, side_cols=[4], force_decimals=2, monospace_numeric=False, one_decimal_first_col=True, no_gray_first_col=True)
                     if fig:
-                        st.plotly_chart(fig, use_container_width=False, config={'scrollZoom': False, 'displayModeBar': False, 'editable': False})
+                        st.plotly_chart(fig, use_container_width=False, config={'staticPlot': True})
                     if df_below is not None and not df_below.empty:
                         st.markdown("---")
                         st.markdown("**Additional Data**")
@@ -1174,7 +1182,7 @@ with tab2:
                             kpi_group_row=2
                         )
                         if fig:
-                            st.plotly_chart(fig, use_container_width=False, config={'scrollZoom': False})
+                            st.plotly_chart(fig, use_container_width=False, config={'staticPlot': True})
                         if df_below is not None and not df_below.empty:
                             st.markdown("---")
                             st.markdown("**Additional Data**")
@@ -1197,7 +1205,7 @@ with tab2:
                             kpi_group_row=2
                         )
                         if fig:
-                            st.plotly_chart(fig, use_container_width=False, config={'scrollZoom': False})
+                            st.plotly_chart(fig, use_container_width=False, config={'staticPlot': True})
                         if df_below is not None and not df_below.empty:
                             st.markdown("---")
                             st.markdown("**Additional Data**")
@@ -1222,7 +1230,7 @@ with tab2:
                             group_gap=40
                         )
                         if fig:
-                            st.plotly_chart(fig, use_container_width=False, config={'scrollZoom': False})
+                            st.plotly_chart(fig, use_container_width=False, config={'staticPlot': True})
                         if df_below is not None and not df_below.empty:
                             st.markdown("---")
                             st.markdown("**Additional Data**")
@@ -1247,7 +1255,7 @@ with tab2:
                 if os.path.exists(heatmap_file):
                     fig, df_below, df_raw = create_heatmap_visualization(heatmap_file, left_margin=400, one_decimal_rows=['per program target', 'per programme target'])
                     if fig:
-                        st.plotly_chart(fig, use_container_width=False, config={'scrollZoom': False, 'displayModeBar': False, 'editable': False})
+                        st.plotly_chart(fig, use_container_width=False, config={'staticPlot': True})
                     if df_below is not None and not df_below.empty:
                         st.markdown("---")
                         st.markdown("**Additional Data**")
@@ -1264,7 +1272,7 @@ with tab2:
                 if os.path.exists(heatmap_file):
                     fig, df_below, df_raw = create_heatmap_visualization(heatmap_file, side_cols=[4], left_margin=560, one_decimal_first_col=True, force_decimals=3, no_gray_first_col=True)
                     if fig:
-                        st.plotly_chart(fig, use_container_width=False, config={'scrollZoom': False, 'displayModeBar': False, 'editable': False})
+                        st.plotly_chart(fig, use_container_width=False, config={'staticPlot': True})
                     if df_below is not None and not df_below.empty:
                         st.markdown("---")
                         st.markdown("**Additional Data**")
@@ -1281,7 +1289,7 @@ with tab2:
                 if os.path.exists(heatmap_file):
                     fig, df_below, df_raw = create_heatmap_visualization(heatmap_file, side_cols=[4], left_margin=560, one_decimal_first_col=True, force_decimals=3, no_gray_first_col=True)
                     if fig:
-                        st.plotly_chart(fig, use_container_width=False, config={'scrollZoom': False, 'displayModeBar': False, 'editable': False})
+                        st.plotly_chart(fig, use_container_width=False, config={'staticPlot': True})
                     if df_below is not None and not df_below.empty:
                         st.markdown("---")
                         st.markdown("**Additional Data**")
@@ -1316,7 +1324,7 @@ with tab2:
                             group_gap=40
                         )
                         if fig:
-                            st.plotly_chart(fig, use_container_width=False, config={'scrollZoom': False})
+                            st.plotly_chart(fig, use_container_width=False, config={'staticPlot': True})
                         if df_below is not None and not df_below.empty:
                             st.markdown('---')
                             st.markdown('**Additional Data**')
@@ -1343,7 +1351,7 @@ with tab2:
                             group_gap=40
                         )
                         if fig:
-                            st.plotly_chart(fig, use_container_width=False, config={'scrollZoom': False})
+                                        st.plotly_chart(fig, use_container_width=False, config={'staticPlot': True})
                         if df_below is not None and not df_below.empty:
                             st.markdown('---')
                             st.markdown('**Additional Data**')
