@@ -1072,16 +1072,18 @@ with tab1:
     
     root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     program_file = os.path.join(root_dir, 'data', 'Program Output KPIs.xlsx')
-    
+
     try:
-        html_programs = excel_to_html_with_merged_cells(program_file, no_decimals=True)
+        # Preserve numeric precision for Program Output KPIs (do not force integer rounding)
+        html_programs = excel_to_html_with_merged_cells(program_file, no_decimals=False)
         st.markdown(html_programs, unsafe_allow_html=True)
     except Exception as e:
         st.warning(f"Could not render with merged cells: {str(e)}")
         # Fallback: format numeric columns to have no decimals and convert to strings
         display_df = df_programs.copy()
         for col in display_df.select_dtypes(include=["number"]).columns:
-            display_df[col] = display_df[col].apply(lambda x: "" if pd.isna(x) else str(int(round(x))))
+            # Preserve original numeric values — do not round
+            display_df[col] = display_df[col].apply(lambda x: "" if pd.isna(x) else (x if isinstance(x, (int, float)) else x))
         st.dataframe(display_df, width='stretch', height=600)
     
     # Download button
@@ -1104,7 +1106,7 @@ with tab2:
     with sub_tab_a:
         st.markdown("### Research, Training, Product Development")
         
-        rtpd_tabs = st.tabs(["KPI by Number", "KPI by Full Time Equivalent (FTE)", "KPI by million (USD)", "KPI over time"])
+        rtpd_tabs = st.tabs(["KPI by Number", "KPI by Full Time Equivalent (FTE)", "KPI by million (USD)", "KPI by Number over time"])
         
         root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         
@@ -1160,7 +1162,7 @@ with tab2:
                 st.warning(f"Could not load heatmap: {str(e)}")
 
         with rtpd_tabs[3]:
-            st.write("**Research, Training, Product Development - KPI over time**")
+            st.write("**Research, Training, Product Development - KPI by Number over time**")
             try:
                 heatmap_file = os.path.join(root_dir, 'data', 'Heat map 4.xlsx')
                 heatmap_file_4_1 = os.path.join(root_dir, 'data', 'Heat map 4-1 Research Outputs.xlsx')
@@ -1245,7 +1247,7 @@ with tab2:
     with sub_tab_b:
         st.markdown("### Recognition, Societal Impact & Inclusivity")
         
-        rsi_tabs = st.tabs(["KPI by Number", "KPI by Full Time Equivalent (FTE)", "KPI by million (USD)", "KPI over time"])
+        rsi_tabs = st.tabs(["KPI by Number", "KPI by Full Time Equivalent (FTE)", "KPI by million (USD)", "KPI by Number over time"])
         
         root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         
@@ -1301,7 +1303,7 @@ with tab2:
                 st.warning(f"Could not load heatmap: {str(e)}")
 
         with rsi_tabs[3]:
-            st.write("**Recognition, Societal Impact & Inclusivity - KPI over time**")
+            st.write("**Recognition, Societal Impact & Inclusivity - KPI by Number over time**")
             # Create focused sub-tabs for Recognition and Societal Impact
             rsi_ot_sub = st.tabs(["Recognition and Reputation", "Societal Impact and Inclusion"]) 
             # Base heatmap file fallback
