@@ -142,10 +142,29 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                 if isinstance(cell_value, (int, float)):
                     # Check if the cell has percentage format
                     if cell_format.number_format and '%' in cell_format.number_format:
-                        if no_decimals:
-                            cell_value = f"{cell_value * 100:.0f}%"
-                        else:
-                            cell_value = f"{cell_value * 100:.2f}%"
+                        try:
+                            pct = cell_value * 100
+                            # Respect Excel percent format decimals when possible
+                            fmt = str(cell_format.number_format)
+                            dec = None
+                            try:
+                                m = re.search(r"%(?!.*%)", fmt)
+                                # count zeros after decimal point before % (e.g. '0.00%')
+                                md = re.search(r"\.(0+)[^%]*%", fmt)
+                                if md:
+                                    dec = len(md.group(1))
+                                else:
+                                    # if no explicit decimals, assume 0
+                                    dec = 0
+                            except Exception:
+                                dec = None
+                            if dec is None:
+                                s = f"{pct:.2f}".rstrip('0').rstrip('.')
+                            else:
+                                s = f"{pct:.{dec}f}"
+                            cell_value = f"{s}%"
+                        except Exception:
+                            cell_value = str(cell_value)
                     else:
                         if no_decimals:
                             # Round to nearest integer and show without decimals
@@ -1074,7 +1093,7 @@ with tab1:
     program_file = os.path.join(root_dir, 'data', 'Program Output KPIs.xlsx')
 
     try:
-        # Preserve numeric precision for Program Output KPIs (do not force integer rounding)
+        # Program Output KPIs: display using Excel cell formats (preserve per-cell decimals)
         html_programs = excel_to_html_with_merged_cells(program_file, no_decimals=False)
         st.markdown(html_programs, unsafe_allow_html=True)
     except Exception as e:
@@ -1082,8 +1101,19 @@ with tab1:
         # Fallback: format numeric columns to have no decimals and convert to strings
         display_df = df_programs.copy()
         for col in display_df.select_dtypes(include=["number"]).columns:
-            # Preserve original numeric values — do not round
-            display_df[col] = display_df[col].apply(lambda x: "" if pd.isna(x) else (x if isinstance(x, (int, float)) else x))
+            def fmt_cell(x):
+                if pd.isna(x):
+                    return ""
+                try:
+                    # Heuristic: treat values between 0 and 1 as percentages
+                    if isinstance(x, (int, float)) and 0 <= x <= 1:
+                        s = f"{x * 100:.2f}".rstrip('0').rstrip('.')
+                        return s + '%'
+                    else:
+                        return str(int(round(x)))
+                except Exception:
+                    return str(x)
+            display_df[col] = display_df[col].apply(fmt_cell)
         st.dataframe(display_df, width='stretch', height=600)
     
     # Download button
