@@ -9,12 +9,12 @@ import numpy as np
 import re
 
 # Page config
-st.set_page_config(page_title="IITA KPI Dashboard", layout="wide")
+st.set_page_config(page_title="IITA Key Performance Indicator (KPI) Dashboard", layout="wide")
 
 # Header
 st.markdown("""
 <div style="background-color:#00891a; padding:20px; border-radius:10px;">
-    <h1 style="color:#ffffff; text-align:center; margin:0;">🌱 IITA KPI Dashboard</h1>
+    <h1 style="color:#ffffff; text-align:center; margin:0;">🌱 IITA Key Performance Indicator (KPI) Dashboard</h1>
     <p style="color:#ffffff; text-align:center; margin:5px;">IITA Programs and Service Unit KPIs</p>
 </div>
 """, unsafe_allow_html=True)
@@ -1575,4 +1575,4 @@ with tab3:
 
 
 st.markdown("---")
-st.caption("Last updated: April 8, 2026 | IITA KPI Dashboard")
+st.caption("Last updated: April 8, 2026 | IITA Key Performance Indicator (KPI) Dashboard")
