@@ -41,7 +41,7 @@ def load_kpi_data():
     return df_programs, df_services, df_heatmap
 
 # Function to convert Excel with merged cells to HTML
-def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highlight_row_keyword=None):
+def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highlight_row_keyword=None, target_col=4, actual_col=5):
     # Load workbook with data_only=True to get calculated values instead of formulas
     wb_data = openpyxl.load_workbook(excel_file_path, data_only=True)
     ws_data = wb_data.active
@@ -215,9 +215,62 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                     styles.append('color: white')
                     styles.append('font-weight: bold')
                 styles.append(f'text-align: {align}')
+                # Color coding for Actual column only (default Excel column 5)
+                bg_color = None
+                text_color = None
+                if col_idx == actual_col:
+                    try:
+                        actual_raw = cell_data.value
+                        # Target is in column target_col (1-based) → index target_col-1 in row_data (0-based)
+                        tgt_idx = target_col - 1
+                        target_cell_obj = row_data[tgt_idx] if len(row_data) > tgt_idx else None
+                        target_raw = target_cell_obj.value if target_cell_obj is not None else None
+                        # Detect percent formats on either cell and scale accordingly
+                        actual_fmt = getattr(cell_format, 'number_format', None)
+                        target_fmt = None
+                        try:
+                            if target_cell_obj is not None:
+                                target_fmt = getattr(ws_format[target_cell_obj.coordinate], 'number_format', None)
+                        except Exception:
+                            target_fmt = None
+                        scale = 1
+                        if (actual_fmt and '%' in str(actual_fmt)) or (target_fmt and '%' in str(target_fmt)):
+                            scale = 100
+                        if actual_raw is not None and target_raw is not None:
+                            a = float(actual_raw) * scale
+                            t = float(target_raw) * scale
+                            mid = t / 2.0
+                            if a == 0:
+                                bg_color = '#D73027'
+                                text_color = 'white'
+                            elif a > 0 and a < mid:
+                                bg_color = '#FFFF00'
+                                text_color = 'black'
+                            elif a >= mid and a < t:
+                                bg_color = '#A6D96A'
+                                text_color = 'black'
+                            else:
+                                bg_color = '#1A7A1A'
+                                text_color = 'white'
+                        else:
+                            # Fallback: if target missing, color present actual green (or red if zero)
+                            if actual_raw is not None:
+                                a = float(actual_raw)
+                                if a == 0:
+                                    bg_color = '#D73027'; text_color = 'white'
+                                else:
+                                    bg_color = '#1A7A1A'; text_color = 'white'
+                    except Exception:
+                        bg_color = None
+                        text_color = None
+
                 # First column cells (row headers) should have slightly larger font
                 if col_idx == 1:
                     styles.append('font-size: 11pt')
+                if bg_color:
+                    styles.append(f'background-color: {bg_color}')
+                if text_color:
+                    styles.append(f'color: {text_color}')
                 style_attr = '; '.join(styles)
                 html += f'<td style="{style_attr};" rowspan="{rowspan}" colspan="{colspan}">{cell_value}</td>'
         
@@ -1402,7 +1455,8 @@ with tab3:
     service_file = os.path.join(root_dir, 'data', 'Service Unit KPIs.xlsx')
     
     try:
-        html_services = excel_to_html_with_merged_cells(service_file, no_decimals=True, highlight_row_keyword='service unit key performance')
+        # Service Unit KPIs: Target in column C (3) and Actual in column D (4)
+        html_services = excel_to_html_with_merged_cells(service_file, no_decimals=True, highlight_row_keyword='service unit key performance', target_col=3, actual_col=4)
 
         # Adjust alignment for Service Unit KPIs table:
         # - first two data rows: left-aligned
