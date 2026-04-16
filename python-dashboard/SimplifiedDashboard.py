@@ -69,6 +69,22 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
         cells = list(merged_range.cells)
         for cell in cells[1:]:  # Skip the first cell (top-left)
             merged_cells[cell] = cells[0]  # Map to top-left cell
+
+    # Determine if we should suppress header coloring for specific KPI files
+    suppress_header_color = False
+    try:
+        bn = os.path.basename(excel_file_path).lower()
+        if 'program output' in bn or 'service unit' in bn:
+            suppress_header_color = True
+    except Exception:
+        suppress_header_color = False
+    # For service unit files, also suppress coloring for row 2 (secondary header)
+    suppress_row2_header = False
+    try:
+        if 'service unit' in bn:
+            suppress_row2_header = True
+    except Exception:
+        suppress_row2_header = False
     
     # Build HTML table
     html = '<table style="border-collapse: collapse; width: 100%; table-layout: fixed; font-family: Arial, sans-serif; background-color: white;">'
@@ -103,6 +119,10 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                         break
             except Exception:
                 highlight_row = False
+
+        # If this is a Service Unit file, suppress highlights triggered by the keyword
+        if highlight_row and suppress_row2_header:
+            highlight_row = False
 
         html += '<tr>'
         for col_idx in range(1, max_col + 1):
@@ -206,7 +226,10 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                 except Exception:
                     pass
                 # make column header font slightly larger
-                html += f'<th style="background-color: #00891a; color: white; font-weight: bold; text-align: center; font-size: 11pt;" rowspan="{rowspan}" colspan="{colspan}">{header_display}</th>'
+                if suppress_header_color:
+                    html += f'<th style="background-color: white; color: black; font-weight: bold; text-align: center; font-size: 11pt;" rowspan="{rowspan}" colspan="{colspan}">{header_display}</th>'
+                else:
+                    html += f'<th style="background-color: #00891a; color: white; font-weight: bold; text-align: center; font-size: 11pt;" rowspan="{rowspan}" colspan="{colspan}">{header_display}</th>'
             else:
                 # Build inline style for this cell
                 styles = []
@@ -215,6 +238,12 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                     styles.append('color: white')
                     styles.append('font-weight: bold')
                 styles.append(f'text-align: {align}')
+                # If this is a Service Unit file and row 2, force no green header
+                if suppress_row2_header and row_idx == 2:
+                    # remove any green highlight and use white background with black text
+                    styles = [s for s in styles if 'background-color' not in s and 'color:' not in s]
+                    styles.append('background-color: white')
+                    styles.append('color: black')
                 # Color coding for Actual column only (default Excel column 5)
                 bg_color = None
                 text_color = None
@@ -1170,7 +1199,15 @@ with tab1:
     try:
         # Program Output KPIs: display using Excel cell formats (preserve per-cell decimals)
         html_programs = excel_to_html_with_merged_cells(program_file, no_decimals=False)
-        st.markdown(html_programs, unsafe_allow_html=True)
+        # Legend (red = below target, yellow = near target, green = at/above target)
+        html_legend = (
+            '<div style="display:flex; gap:12px; align-items:center; margin-bottom:8px; font-family: Arial, sans-serif;">'
+            '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#D73027;display:inline-block;border-radius:3px;"></span><span>Below target</span></div>'
+            '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#FFFF00;display:inline-block;border-radius:3px; border:1px solid #999;"></span><span>Midpoint</span></div>'
+            '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#1A7A1A;display:inline-block;border-radius:3px;"></span><span>At / Above target</span></div>'
+            '</div>'
+        )
+        st.markdown(html_legend + html_programs, unsafe_allow_html=True)
     except Exception as e:
         st.warning(f"Could not render with merged cells: {str(e)}")
         # Fallback: format numeric columns to have no decimals and convert to strings
@@ -1479,6 +1516,15 @@ with tab3:
     try:
         # Service Unit KPIs: Target in column C (3) and Actual in column D (4)
         html_services = excel_to_html_with_merged_cells(service_file, no_decimals=True, highlight_row_keyword='service unit key performance', target_col=3, actual_col=4)
+        # Legend for Service Unit KPIs
+        html_legend_srv = (
+            '<div style="display:flex; gap:12px; align-items:center; margin-bottom:8px; font-family: Arial, sans-serif;">'
+            '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#D73027;display:inline-block;border-radius:3px;"></span><span>Below target</span></div>'
+            '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#FFFF00;display:inline-block;border-radius:3px; border:1px solid #999;"></span><span>Midpoint</span></div>'
+            '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#1A7A1A;display:inline-block;border-radius:3px;"></span><span>At / Above target</span></div>'
+            '</div>'
+        )
+
 
         # Adjust alignment for Service Unit KPIs table:
         # - first two data rows: left-aligned
@@ -1663,7 +1709,7 @@ with tab3:
             return new_html
 
         html_services = adjust_service_alignment(html_services)
-        st.markdown(html_services, unsafe_allow_html=True)
+        st.markdown(html_legend_srv + html_services, unsafe_allow_html=True)
     except Exception as e:
         st.warning(f"Could not render with merged cells: {str(e)}")
         # Fallback: format numeric columns to have no decimals and convert to strings
