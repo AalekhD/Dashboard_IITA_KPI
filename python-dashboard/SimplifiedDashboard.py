@@ -238,12 +238,14 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                     styles.append('color: white')
                     styles.append('font-weight: bold')
                 styles.append(f'text-align: {align}')
-                # If this is a Service Unit file and row 2, force no green header
-                if suppress_row2_header and row_idx == 2:
+                # If this is a Service Unit file and row 2 or the Service Unit header row (row 9), force no green header
+                if suppress_row2_header and (row_idx == 2 or row_idx == 9 or
+                                             any(c.value is not None and 'service unit key performance' in str(c.value).lower() for c in row_data)):
                     # remove any green highlight and use white background with black text
                     styles = [s for s in styles if 'background-color' not in s and 'color:' not in s]
                     styles.append('background-color: white')
                     styles.append('color: black')
+                    styles.append('font-weight: bold')
                 # Color coding for Actual column only (default Excel column 5)
                 bg_color = None
                 text_color = None
@@ -323,7 +325,15 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                 if text_color:
                     styles.append(f'color: {text_color}')
                 style_attr = '; '.join(styles)
-                html += f'<td style="{style_attr};" rowspan="{rowspan}" colspan="{colspan}">{cell_value}</td>'
+                # If this is the Service Unit header row (row 9) or contains the phrase, ensure bold display
+                if row_idx == 9 or any(c.value is not None and 'service unit key performance' in str(c.value).lower() for c in row_data):
+                    # ensure style includes bold
+                    if 'font-weight' not in style_attr:
+                        style_attr = (style_attr + '; font-weight: bold').strip()
+                    cell_display = f'<strong>{cell_value}</strong>'
+                else:
+                    cell_display = cell_value
+                html += f'<td style="{style_attr};" rowspan="{rowspan}" colspan="{colspan}">{cell_display}</td>'
         
         html += '</tr>'
     
