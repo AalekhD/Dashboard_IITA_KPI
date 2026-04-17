@@ -748,7 +748,7 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
 
             # Normalize using 3-point scale per column:
             #   min_val (lowest in rows 4-16) -> 0.0 (red)
-            #   midpoint (per_program_target / 2)  -> 0.5 (yellow)
+            #   50 % Progress (per_program_target / 2)  -> 0.5 (yellow)
             #   per_program_target                 -> 1.0 (dark green)
             df_normalized = df_heatmap.copy()
             # Mark side columns (absolute Excel indices in side_cols) as NaN for data rows so they are not colored
@@ -957,24 +957,30 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
             try:
                 # Primary heatmap is trace 0 from px.imshow — set a colorbar that maps the normalized values (-1..1) to human-friendly tick labels.
                 cb = dict(
-                    title='Legend',
+                    title='Progress',
                     titleside='top',
                     tickmode='array',
                     tickvals=[0.0, 0.5, 1.0],
-                    ticktext=['Min', 'Midpoint', 'Target'],
+                    ticktext=['No progress', '50% progress', 'Target achieved'],
                     ticks='outside',
-                    thickness=20,
+                    thickness=24,
                     lenmode='fraction',
                     len=0.6,
                     outlinewidth=0,
+                    tickfont=dict(size=12, color='black'),
+                    titlefont=dict(size=12, color='black'),
+                    bgcolor='rgba(255,255,255,0.9)',
+                    x=0.99,
+                    y=0.5,
+                    xanchor='left',
+                    yanchor='middle',
                 )
                 if len(fig.data) > 0:
-                    fig.data[0].update(colorbar=cb, showscale=True)
-                    # Also set colorbar on coloraxis in case px.imshow uses a coloraxis
+                    # Disable Plotly's built-in colorbar; we use the HTML legend instead
                     try:
-                        fig.update_coloraxes(colorbar=cb)
+                        fig.data[0].update(showscale=False)
                     except Exception:
-                        pass
+                        fig.data[0]['showscale'] = False
             except Exception:
                 pass
 
@@ -1066,7 +1072,7 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                 yaxis_title="",
                 title="",
                 margin=dict(l=LEFT_M, r=RIGHT_M, t=dynamic_top, b=BOTTOM_M),
-                coloraxis_showscale=True
+                coloraxis_showscale=False
             )
 
             # Add KPI type group header rectangles + labels above the x-axis
@@ -1217,6 +1223,16 @@ def render_gray_table(df):
     </div>"""
     st.markdown(html, unsafe_allow_html=True)
 
+# Helper: return HTML legend matching Service KPI styling (red/yellow/green)
+def get_heatmap_legend_html():
+    return (
+        '<div style="display:flex; gap:12px; align-items:center; margin-bottom:8px; font-family: Arial, sans-serif;">'
+        '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#D73027;display:inline-block;border-radius:3px;"></span><span>No Progress</span></div>'
+        '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#FFFF00;display:inline-block;border-radius:3px; border:1px solid #999;"></span><span>50 % Progress</span></div>'
+        '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#1A7A1A;display:inline-block;border-radius:3px;"></span><span>Target Achieved</span></div>'
+        '</div>'
+    )
+
 # Load data
 df_programs, df_services, df_heatmap = load_kpi_data()
 
@@ -1233,12 +1249,12 @@ with tab1:
     try:
         # Program Output KPIs: display using Excel cell formats (preserve per-cell decimals)
         html_programs = excel_to_html_with_merged_cells(program_file, no_decimals=False)
-        # Legend (red = below target, yellow = near target, green = at/above target)
+        # Legend (red = No Progress, yellow = near target, green = at/above target)
         html_legend = (
             '<div style="display:flex; gap:12px; align-items:center; margin-bottom:8px; font-family: Arial, sans-serif;">'
-            '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#D73027;display:inline-block;border-radius:3px;"></span><span>Below target</span></div>'
-            '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#FFFF00;display:inline-block;border-radius:3px; border:1px solid #999;"></span><span>Midpoint</span></div>'
-            '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#1A7A1A;display:inline-block;border-radius:3px;"></span><span>At / Above target</span></div>'
+            '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#D73027;display:inline-block;border-radius:3px;"></span><span>No Progress</span></div>'
+            '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#FFFF00;display:inline-block;border-radius:3px; border:1px solid #999;"></span><span>50 % Progress</span></div>'
+            '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#1A7A1A;display:inline-block;border-radius:3px;"></span><span>Target Achieved</span></div>'
             '</div>'
         )
         st.markdown(html_legend + html_programs, unsafe_allow_html=True)
@@ -1293,6 +1309,7 @@ with tab2:
                 if os.path.exists(heatmap_file):
                     fig, df_below, df_raw = create_heatmap_visualization(heatmap_file, zero_decimal_cols=['Thompson', 'Thomson'], one_decimal_cols=['per IRS', 'per irs'], zero_decimal_rows=['per program target', 'per programme target'])
                     if fig:
+                        st.markdown(get_heatmap_legend_html(), unsafe_allow_html=True)
                         st.plotly_chart(fig, use_container_width=False, config={'staticPlot': True})
                     if df_below is not None and not df_below.empty:
                         st.markdown("---")
@@ -1310,6 +1327,7 @@ with tab2:
                 if os.path.exists(heatmap_file):
                     fig, df_below, df_raw = create_heatmap_visualization(heatmap_file, side_cols=[4], force_decimals=2, suppress_pct_display=True, one_decimal_first_col=True, no_gray_first_col=True)
                     if fig:
+                        st.markdown(get_heatmap_legend_html(), unsafe_allow_html=True)
                         st.plotly_chart(fig, use_container_width=False, config={'staticPlot': True})
                     if df_below is not None and not df_below.empty:
                         st.markdown("---")
@@ -1327,6 +1345,7 @@ with tab2:
                 if os.path.exists(heatmap_file):
                     fig, df_below, df_raw = create_heatmap_visualization(heatmap_file, side_cols=[4], force_decimals=2, monospace_numeric=False, one_decimal_first_col=True, no_gray_first_col=True)
                     if fig:
+                        st.markdown(get_heatmap_legend_html(), unsafe_allow_html=True)
                         st.plotly_chart(fig, use_container_width=False, config={'staticPlot': True})
                     if df_below is not None and not df_below.empty:
                         st.markdown("---")
@@ -1361,6 +1380,7 @@ with tab2:
                             kpi_group_row=2
                         )
                         if fig:
+                            st.markdown(get_heatmap_legend_html(), unsafe_allow_html=True)
                             st.plotly_chart(fig, use_container_width=False, config={'staticPlot': True})
                         if df_below is not None and not df_below.empty:
                             st.markdown("---")
@@ -1384,6 +1404,7 @@ with tab2:
                             kpi_group_row=2
                         )
                         if fig:
+                            st.markdown(get_heatmap_legend_html(), unsafe_allow_html=True)
                             st.plotly_chart(fig, use_container_width=False, config={'staticPlot': True})
                         if df_below is not None and not df_below.empty:
                             st.markdown("---")
@@ -1409,6 +1430,7 @@ with tab2:
                             group_gap=40
                         )
                         if fig:
+                            st.markdown(get_heatmap_legend_html(), unsafe_allow_html=True)
                             st.plotly_chart(fig, use_container_width=False, config={'staticPlot': True})
                         if df_below is not None and not df_below.empty:
                             st.markdown("---")
@@ -1434,6 +1456,7 @@ with tab2:
                 if os.path.exists(heatmap_file):
                     fig, df_below, df_raw = create_heatmap_visualization(heatmap_file, left_margin=400, one_decimal_rows=['per program target', 'per programme target'])
                     if fig:
+                        st.markdown(get_heatmap_legend_html(), unsafe_allow_html=True)
                         st.plotly_chart(fig, use_container_width=False, config={'staticPlot': True})
                     if df_below is not None and not df_below.empty:
                         st.markdown("---")
@@ -1451,6 +1474,7 @@ with tab2:
                 if os.path.exists(heatmap_file):
                     fig, df_below, df_raw = create_heatmap_visualization(heatmap_file, side_cols=[4], left_margin=560, one_decimal_first_col=True, force_decimals=3, no_gray_first_col=True)
                     if fig:
+                        st.markdown(get_heatmap_legend_html(), unsafe_allow_html=True)
                         st.plotly_chart(fig, use_container_width=False, config={'staticPlot': True})
                     if df_below is not None and not df_below.empty:
                         st.markdown("---")
@@ -1468,6 +1492,7 @@ with tab2:
                 if os.path.exists(heatmap_file):
                     fig, df_below, df_raw = create_heatmap_visualization(heatmap_file, side_cols=[4], left_margin=560, one_decimal_first_col=True, force_decimals=3, no_gray_first_col=True)
                     if fig:
+                        st.markdown(get_heatmap_legend_html(), unsafe_allow_html=True)
                         st.plotly_chart(fig, use_container_width=False, config={'staticPlot': True})
                     if df_below is not None and not df_below.empty:
                         st.markdown("---")
@@ -1503,6 +1528,7 @@ with tab2:
                             group_gap=40
                         )
                         if fig:
+                            st.markdown(get_heatmap_legend_html(), unsafe_allow_html=True)
                             st.plotly_chart(fig, use_container_width=False, config={'staticPlot': True})
                         if df_below is not None and not df_below.empty:
                             st.markdown('---')
@@ -1530,7 +1556,8 @@ with tab2:
                             group_gap=40
                         )
                         if fig:
-                                        st.plotly_chart(fig, use_container_width=False, config={'staticPlot': True})
+                            st.markdown(get_heatmap_legend_html(), unsafe_allow_html=True)
+                            st.plotly_chart(fig, use_container_width=False, config={'staticPlot': True})
                         if df_below is not None and not df_below.empty:
                             st.markdown('---')
                             st.markdown('**Additional Data**')
@@ -1553,9 +1580,9 @@ with tab3:
         # Legend for Service Unit KPIs
         html_legend_srv = (
             '<div style="display:flex; gap:12px; align-items:center; margin-bottom:8px; font-family: Arial, sans-serif;">'
-            '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#D73027;display:inline-block;border-radius:3px;"></span><span>Below target</span></div>'
-            '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#FFFF00;display:inline-block;border-radius:3px; border:1px solid #999;"></span><span>Midpoint</span></div>'
-            '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#1A7A1A;display:inline-block;border-radius:3px;"></span><span>At / Above target</span></div>'
+            '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#D73027;display:inline-block;border-radius:3px;"></span><span>No Progress</span></div>'
+            '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#FFFF00;display:inline-block;border-radius:3px; border:1px solid #999;"></span><span>50 % Progress</span></div>'
+            '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#1A7A1A;display:inline-block;border-radius:3px;"></span><span>Target Achieved</span></div>'
             '</div>'
         )
 
