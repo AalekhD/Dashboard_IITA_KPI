@@ -783,7 +783,8 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                 midpoint = target / 2.0 if target else None
                 for r in range(len(all_programs)):
                     if r >= len(programs):
-                        df_normalized.iloc[r, col_i] = -1.0  # sentinel → grey
+                        # treat below-heatmap rows as missing for coloring (no grey sentinel)
+                        df_normalized.iloc[r, col_i] = np.nan
                         continue
                     orig_item = all_original_values[r][col_i] if r < len(all_original_values) and col_i < len(all_original_values[r]) else (None, None)
                     orig_fval = orig_item[0] if isinstance(orig_item, tuple) else None
@@ -820,14 +821,11 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
             #   v= 0.5 → pos 0.75  (yellow)
             #   v= 0.75 → pos 0.875 (light green)
             #   v= 1  → pos 1.00  (dark green)
+            # Strict red (min) -> yellow (midpoint) -> green (target)
             colorscale = [
-                [0.0,   '#9E9E9E'],  # grey (below-row sentinel)
-                [0.499, '#9E9E9E'],  # grey end
-                [0.5,   '#D73027'],  # dark red  (data min)
-                [0.625, '#F46D43'],  # orange
-                [0.75,  '#FFFF00'],  # yellow
-                [0.875, '#A6D96A'],  # light green
-                [1.0,   '#1A7A1A'],  # dark green
+                [0.0, '#D73027'],  # red (min)
+                [0.5, '#FFFF00'],  # yellow (midpoint)
+                [1.0, '#1A7A1A'],  # dark green (target)
             ]
 
             # Smart numeric formatter — preserves significant figures for small values
@@ -942,7 +940,7 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                 color_continuous_scale=colorscale,
                 text_auto=False,
                 aspect="auto",
-                zmin=-1,
+                zmin=0,
                 zmax=1
             )
 
@@ -954,6 +952,31 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                 xgap=2,
                 ygap=2
             )
+
+            # Add a colorbar legend for the main heatmap (trace 0)
+            try:
+                # Primary heatmap is trace 0 from px.imshow — set a colorbar that maps the normalized values (-1..1) to human-friendly tick labels.
+                cb = dict(
+                    title='Legend',
+                    titleside='top',
+                    tickmode='array',
+                    tickvals=[0.0, 0.5, 1.0],
+                    ticktext=['Min', 'Midpoint', 'Target'],
+                    ticks='outside',
+                    thickness=20,
+                    lenmode='fraction',
+                    len=0.6,
+                    outlinewidth=0,
+                )
+                if len(fig.data) > 0:
+                    fig.data[0].update(colorbar=cb, showscale=True)
+                    # Also set colorbar on coloraxis in case px.imshow uses a coloraxis
+                    try:
+                        fig.update_coloraxes(colorbar=cb)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
 
             # Add a separate text-only trace for below-row cells so their text is always visible on grey
             if len(below_programs) > 0:
@@ -999,7 +1022,8 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
             computed_left = int(longest_label_chars * CHAR_PX + 160)
             # bump defaults slightly
             LEFT_M = left_margin if left_margin is not None else max(computed_left, 400 if show_row_groups else 260)
-            RIGHT_M = 20
+            # Reserve enough right margin so the colorbar and its labels are visible
+            RIGHT_M = max(140, 20)
             BOTTOM_M = 20
             chart_height = dynamic_top + 40 + len(all_programs) * row_px
             chart_width  = LEFT_M + RIGHT_M + len(kpi_names) * col_px
@@ -1042,7 +1066,7 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                 yaxis_title="",
                 title="",
                 margin=dict(l=LEFT_M, r=RIGHT_M, t=dynamic_top, b=BOTTOM_M),
-                coloraxis_showscale=False
+                coloraxis_showscale=True
             )
 
             # Add KPI type group header rectangles + labels above the x-axis
