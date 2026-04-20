@@ -1154,7 +1154,7 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                     wrapped_left = '<br>'.join(f'<b>{line}</b>' for line in wrap_label(group_name, max_len=12).split('<br>'))
                     # Position group header further left to avoid overlapping program text
                     # make offset slightly larger so header text doesn't collide with row labels
-                    ann_x = gx_outer - 0.06
+                    ann_x = gx_outer - 0.09
                     fig.add_annotation(
                         xref='paper', yref='y',
                         x=ann_x, y=y_center_label,
