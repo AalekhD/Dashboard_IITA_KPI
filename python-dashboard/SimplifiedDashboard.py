@@ -1152,17 +1152,34 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                     )
                     # Wrap long group names so they don't overflow and anchor to the right
                     wrapped_left = '<br>'.join(f'<b>{line}</b>' for line in wrap_label(group_name, max_len=12).split('<br>'))
-                    # Position group header further left to avoid overlapping program text
-                    # make offset slightly larger so header text doesn't collide with row labels
-                    ann_x = gx_outer - 0.09
+                    # Position group header: increase gap for specific groups
+                    gn = (group_name or '').strip().lower()
+                    # file basename to detect specific 4-1 files
+                    bn = os.path.basename(excel_file_path).lower() if excel_file_path else ''
+                    # If rendering the 4-1 or 4-2 special workbooks (Capacity/Product or Society Impact), open a larger gap
+                    if (('4-1' in bn and ('capacity' in bn or 'product' in bn)) or
+                        ('4-2' in bn and ('societ' in bn or 'inclusion' in bn or 'impact' in bn))):
+                        # moderate gap for these special files
+                        ann_x = gx_inner - 0.12
+                        ann_anchor = 'right'
+                    elif ('capacity build' in gn or 'capacity building' in gn or 'product development' in gn or
+                          'societ' in gn or 'inclusion' in gn or 'impact' in gn):
+                        # slightly smaller fallback gap for Capacity/Product/Societal groups
+                        ann_x = gx_outer - 0.30
+                        ann_anchor = 'left'
+                    else:
+                        # default — place near the precomputed midpoint
+                        ann_x = gx_ann
+                        ann_anchor = 'left'
+                    ann_align = 'right' if ann_anchor == 'right' else 'left'
                     fig.add_annotation(
                         xref='paper', yref='y',
                         x=ann_x, y=y_center_label,
                         text=wrapped_left,
                         showarrow=False,
                         font=dict(color='black', size=12, family='Arial Black, Arial, sans-serif'),
-                        align='left',
-                        xanchor='left',
+                        align=ann_align,
+                        xanchor=ann_anchor,
                         textangle=0,
                         yanchor='middle',
                         bgcolor='rgba(0,0,0,0)'
