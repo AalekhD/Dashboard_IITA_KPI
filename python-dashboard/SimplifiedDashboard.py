@@ -7,6 +7,7 @@ from openpyxl.utils import get_column_letter
 import os
 import numpy as np
 import re
+import base64
 
 # Page config
 st.set_page_config(page_title="IITA Key Performance Indicator (KPI) Dashboard", layout="wide")
@@ -984,21 +985,47 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
             except Exception:
                 pass
 
-            # Add a separate text-only trace for below-row cells so their text is always visible on grey
+            # Add a gray heatmap trace for below-row cells (rows beyond heatmap_max_row)
+            # so those rows render as light-gray while keeping their text readable.
             if len(below_programs) > 0:
                 below_text = text_display[len(programs):]
                 fig.add_trace(go.Heatmap(
-                    z=np.full((len(below_programs), len(kpi_names)), np.nan),
+                    z=np.full((len(below_programs), len(kpi_names)), 1.0),
                     x=kpi_names,
                     y=all_programs[len(programs):],
                     text=np.array(below_text, dtype=object),
                     texttemplate='%{text}',
-                    textfont=dict(size=16, color='#333333', family=text_family),
+                    textfont=dict(size=16, color='black', family=text_family),
                     showscale=False,
                     coloraxis=None,
-                    colorscale=[[0, 'rgba(0,0,0,0)'], [1, 'rgba(0,0,0,0)']],
+                    colorscale=[[0, '#d1d5db'], [1, '#d1d5db']],
                     zmin=0, zmax=1,
                     xgap=2, ygap=2,
+                    hoverinfo='skip',
+                ))
+
+                # Overlay explicit text scatter for below-row cells so text is always on top
+                flat_x = []
+                flat_y = []
+                flat_text = []
+                for ri in range(len(programs), len(all_programs)):
+                    row_idx = ri - len(programs)
+                    for ci in range(len(kpi_names)):
+                        # guard against uneven text_display rows
+                        try:
+                            t = text_display[ri][ci]
+                        except Exception:
+                            t = ''
+                        flat_x.append(kpi_names[ci])
+                        flat_y.append(all_programs[ri])
+                        flat_text.append(str(t))
+
+                fig.add_trace(go.Scatter(
+                    x=flat_x,
+                    y=flat_y,
+                    mode='text',
+                    text=flat_text,
+                    textfont=dict(color='black', size=16, family=text_family),
                     hoverinfo='skip',
                 ))
 
@@ -1323,56 +1350,64 @@ with tab2:
         with rtpd_tabs[0]:
             st.write("**Research, Training, Product Development - KPI by Number**")
             try:
-                heatmap_file = os.path.join(root_dir, 'data', 'Heat map 1.xlsx')
-                if os.path.exists(heatmap_file):
-                    fig, df_below, df_raw = create_heatmap_visualization(heatmap_file, zero_decimal_cols=['Thompson', 'Thomson'], one_decimal_cols=['per IRS', 'per irs'], zero_decimal_rows=['per program target', 'per programme target'])
-                    if fig:
-                        st.markdown(get_heatmap_legend_html(), unsafe_allow_html=True)
-                        st.plotly_chart(fig, use_container_width=False, config={'staticPlot': True})
-                    if df_below is not None and not df_below.empty:
-                        st.markdown("---")
-                        st.markdown("**Additional Data**")
-                        render_gray_table(df_below)
+                # Use only the pre-rendered image for Heat Map 1 with the exact filename in the data folder.
+                img_path = os.path.join(root_dir, 'data', 'Heat_map_1.png')
+                if os.path.exists(img_path):
+                    st.markdown(get_heatmap_legend_html(), unsafe_allow_html=True)
+                    # Embed the image as a base64 data URL so it scales to the page width responsively
+                    try:
+                        with open(img_path, 'rb') as _f:
+                            _img_bytes = _f.read()
+                        _img_b64 = base64.b64encode(_img_bytes).decode('utf-8')
+                        _img_html = f'<img src="data:image/png;base64,{_img_b64}" style="max-width:100%; width:100%; height:auto; display:block; margin:0 auto;" />'
+                        st.markdown(_img_html, unsafe_allow_html=True)
+                    except Exception:
+                        # Fallback to a large fixed width display
+                        st.image(img_path, width=1200)
                 else:
-                    st.info("📁 Waiting for: Heat map 1.xlsx")
+                    st.info('📁 Waiting for: Heat_map_1.png')
             except Exception as e:
-                st.warning(f"Could not load heatmap: {str(e)}")
+                st.warning(f'Could not load heatmap image: {str(e)}')
 
         with rtpd_tabs[1]:
             st.write("**Research, Training, Product Development - KPI by Full Time Equivalent (FTE)**")
             try:
-                heatmap_file = os.path.join(root_dir, 'data', 'Heat map 2.xlsx')
-                if os.path.exists(heatmap_file):
-                    fig, df_below, df_raw = create_heatmap_visualization(heatmap_file, side_cols=[4], force_decimals=2, suppress_pct_display=True, one_decimal_first_col=True, no_gray_first_col=True)
-                    if fig:
-                        st.markdown(get_heatmap_legend_html(), unsafe_allow_html=True)
-                        st.plotly_chart(fig, use_container_width=False, config={'staticPlot': True})
-                    if df_below is not None and not df_below.empty:
-                        st.markdown("---")
-                        st.markdown("**Additional Data**")
-                        render_gray_table(df_below)
+                # Use only the pre-rendered image for Heat Map 2 in the data folder.
+                img_path = os.path.join(root_dir, 'data', 'Heat_map_2.png')
+                if os.path.exists(img_path):
+                    st.markdown(get_heatmap_legend_html(), unsafe_allow_html=True)
+                    try:
+                        with open(img_path, 'rb') as _f:
+                            _img_bytes = _f.read()
+                        _img_b64 = base64.b64encode(_img_bytes).decode('utf-8')
+                        _img_html = f'<img src="data:image/png;base64,{_img_b64}" style="max-width:100%; width:100%; height:auto; display:block; margin:0 auto;" />'
+                        st.markdown(_img_html, unsafe_allow_html=True)
+                    except Exception:
+                        st.image(img_path, width=1200)
                 else:
-                    st.info("📁 Waiting for: Heat map 2.xlsx")
+                    st.info('📁 Waiting for: Heat_map_2.png')
             except Exception as e:
-                st.warning(f"Could not load heatmap: {str(e)}")
+                st.warning(f"Could not load heatmap image: {str(e)}")
 
         with rtpd_tabs[2]:
             st.write("**Research, Training, Product Development - KPI by million (USD)**")
             try:
-                heatmap_file = os.path.join(root_dir, 'data', 'Heat map 3.xlsx')
-                if os.path.exists(heatmap_file):
-                    fig, df_below, df_raw = create_heatmap_visualization(heatmap_file, side_cols=[4], force_decimals=2, monospace_numeric=False, one_decimal_first_col=True, no_gray_first_col=True)
-                    if fig:
-                        st.markdown(get_heatmap_legend_html(), unsafe_allow_html=True)
-                        st.plotly_chart(fig, use_container_width=False, config={'staticPlot': True})
-                    if df_below is not None and not df_below.empty:
-                        st.markdown("---")
-                        st.markdown("**Additional Data**")
-                        render_gray_table(df_below)
+                # Use only the pre-rendered image for Heat Map 3 in the data folder.
+                img_path = os.path.join(root_dir, 'data', 'Heat_map_3.png')
+                if os.path.exists(img_path):
+                    st.markdown(get_heatmap_legend_html(), unsafe_allow_html=True)
+                    try:
+                        with open(img_path, 'rb') as _f:
+                            _img_bytes = _f.read()
+                        _img_b64 = base64.b64encode(_img_bytes).decode('utf-8')
+                        _img_html = f'<img src="data:image/png;base64,{_img_b64}" style="max-width:100%; width:100%; height:auto; display:block; margin:0 auto;" />'
+                        st.markdown(_img_html, unsafe_allow_html=True)
+                    except Exception:
+                        st.image(img_path, width=1200)
                 else:
-                    st.info("📁 Waiting for: Heat map 3.xlsx")
+                    st.info('📁 Waiting for: Heat_map_3.png')
             except Exception as e:
-                st.warning(f"Could not load heatmap: {str(e)}")
+                st.warning(f"Could not load heatmap image: {str(e)}")
 
         with rtpd_tabs[3]:
             st.write("**Research, Training, Product Development - KPI by Number over time**")
@@ -1387,73 +1422,55 @@ with tab2:
                     ot_tabs = st.tabs(["Research Outputs", "Capacity Building", "Product Development"])
 
                     with ot_tabs[0]:
-                        # Research Outputs
-                        fig, df_below, df_raw = create_heatmap_visualization(
-                            heatmap_choice,
-                            zero_decimal_cols=['Thompson', 'Thomson'],
-                            one_decimal_cols=['per IRS', 'per irs'],
-                            zero_decimal_rows=['per program target', 'per programme target'],
-                            force_decimals=0,
-                            kpi_group_filter='research',
-                            kpi_group_row=2
-                        )
-                        if fig:
-                            st.markdown(get_heatmap_legend_html(), unsafe_allow_html=True)
-                            st.plotly_chart(fig, use_container_width=False, config={'staticPlot': True})
-                        if df_below is not None and not df_below.empty:
-                            st.markdown("---")
-                            st.markdown("**Additional Data**")
-                            render_gray_table(df_below)
+                        # Research Outputs — use the pre-rendered image only (no Excel fallback)
+                        img_path = os.path.join(root_dir, 'data', 'Heat map 4-1 Research Outputs.png')
+                        if os.path.exists(img_path):
+                            try:
+                                with open(img_path, 'rb') as _f:
+                                    _img_bytes = _f.read()
+                                _img_b64 = base64.b64encode(_img_bytes).decode('utf-8')
+                                _img_html = f'<img src="data:image/png;base64,{_img_b64}" style="max-width:100%; width:100%; height:auto; display:block; margin:0 auto; margin-top:0px;" />'
+                                # Reduce spacing by modifying legend's margin and embedding together
+                                legend_html = get_heatmap_legend_html().replace('margin-bottom:8px;', 'margin-bottom:2px;')
+                                combined_html = f'<div style="margin:0;padding:0;">{legend_html}{_img_html}</div>'
+                                st.markdown(combined_html, unsafe_allow_html=True)
+                            except Exception:
+                                st.markdown(get_heatmap_legend_html(), unsafe_allow_html=True)
+                                st.image(img_path, width=1200)
+                        else:
+                            st.info('📁 Waiting for: Heat map 4-1 Research Outputs.png')
 
                     with ot_tabs[1]:
-                        # Capacity Building — prefer a dedicated capacity-building file if present
-                        cap_file = os.path.join(root_dir, 'data', 'Heat map 4-1 Capacity Building.xlsx')
-                        cap_choice = cap_file if os.path.exists(cap_file) else heatmap_choice
-                        # Data is known to live in columns 10,16,22 for this sheet
-                        fig, df_below, df_raw = create_heatmap_visualization(
-                            cap_choice,
-                            zero_decimal_cols=['Thompson', 'Thomson'],
-                            one_decimal_cols=['per IRS', 'per irs'],
-                            zero_decimal_rows=['per program target', 'per programme target'],
-                            force_decimals=0,
-                            kpi_group_filter='capacity',
-                            force_include_cols=[10, 16, 22],
-                            kpi_row=3,
-                            kpi_group_row=2
-                        )
-                        if fig:
+                        # Capacity Building — use the pre-rendered image only (no Excel fallback)
+                        img_path = os.path.join(root_dir, 'data', 'Heat map 4-1 Capacity Building.png')
+                        if os.path.exists(img_path):
                             st.markdown(get_heatmap_legend_html(), unsafe_allow_html=True)
-                            st.plotly_chart(fig, use_container_width=False, config={'staticPlot': True})
-                        if df_below is not None and not df_below.empty:
-                            st.markdown("---")
-                            st.markdown("**Additional Data**")
-                            render_gray_table(df_below)
+                            try:
+                                with open(img_path, 'rb') as _f:
+                                    _img_bytes = _f.read()
+                                _img_b64 = base64.b64encode(_img_bytes).decode('utf-8')
+                                _img_html = f'<img src="data:image/png;base64,{_img_b64}" style="max-width:100%; width:100%; height:auto; display:block; margin:0 auto;" />'
+                                st.markdown(_img_html, unsafe_allow_html=True)
+                            except Exception:
+                                st.image(img_path, width=1200)
+                        else:
+                            st.info('📁 Waiting for: Heat map 4-1 Capacity Building.png')
 
                     with ot_tabs[2]:
-                        # Product Development — prefer a dedicated product-development file if present
-                        prod_file = os.path.join(root_dir, 'data', 'Heat map 4-1 - Product Development.xlsx')
-                        prod_choice = prod_file if os.path.exists(prod_file) else heatmap_choice
-                        # Data is known to live in columns 10,16,22,28 for this sheet
-                        fig, df_below, df_raw = create_heatmap_visualization(
-                            prod_choice,
-                            zero_decimal_cols=['Thompson', 'Thomson'],
-                            one_decimal_cols=['per IRS', 'per irs'],
-                            zero_decimal_rows=['per program target', 'per programme target'],
-                            force_decimals=0,
-                            kpi_group_filter='product',
-                            force_include_cols=[10, 16, 22, 28],
-                            kpi_row=3,
-                            kpi_group_row=2,
-                            extra_top=30,
-                            group_gap=40
-                        )
-                        if fig:
+                        # Product Development — use the pre-rendered image only (no Excel fallback)
+                        img_path = os.path.join(root_dir, 'data', 'Heat map 4-1 - Product Development.png')
+                        if os.path.exists(img_path):
                             st.markdown(get_heatmap_legend_html(), unsafe_allow_html=True)
-                            st.plotly_chart(fig, use_container_width=False, config={'staticPlot': True})
-                        if df_below is not None and not df_below.empty:
-                            st.markdown("---")
-                            st.markdown("**Additional Data**")
-                            render_gray_table(df_below)
+                            try:
+                                with open(img_path, 'rb') as _f:
+                                    _img_bytes = _f.read()
+                                _img_b64 = base64.b64encode(_img_bytes).decode('utf-8')
+                                _img_html = f'<img src="data:image/png;base64,{_img_b64}" style="max-width:100%; width:100%; height:auto; display:block; margin:0 auto;" />'
+                                st.markdown(_img_html, unsafe_allow_html=True)
+                            except Exception:
+                                st.image(img_path, width=1200)
+                        else:
+                            st.info('📁 Waiting for: Heat map 4-1 - Product Development.png')
                 else:
                     st.info("📁 Waiting for: Heat map 4.xlsx")
             except Exception as e:
@@ -1470,120 +1487,106 @@ with tab2:
         with rsi_tabs[0]:
             st.write("**Recognition, Societal Impact & Inclusivity - KPI by Number**")
             try:
-                heatmap_file = os.path.join(root_dir, 'data', 'Heat map 5.xlsx')
-                if os.path.exists(heatmap_file):
-                    fig, df_below, df_raw = create_heatmap_visualization(heatmap_file, left_margin=400, one_decimal_rows=['per program target', 'per programme target'])
-                    if fig:
-                        st.markdown(get_heatmap_legend_html(), unsafe_allow_html=True)
-                        st.plotly_chart(fig, use_container_width=False, config={'staticPlot': True})
-                    if df_below is not None and not df_below.empty:
-                        st.markdown("---")
-                        st.markdown("**Additional Data**")
-                        render_gray_table(df_below)
+                # Use only the pre-rendered image for Heat Map 5 (Recognition/Societal) in data folder.
+                img_path = os.path.join(root_dir, 'data', 'Heat_map_5.png')
+                if os.path.exists(img_path):
+                    st.markdown(get_heatmap_legend_html(), unsafe_allow_html=True)
+                    try:
+                        with open(img_path, 'rb') as _f:
+                            _img_bytes = _f.read()
+                        _img_b64 = base64.b64encode(_img_bytes).decode('utf-8')
+                        _img_html = f'<img src="data:image/png;base64,{_img_b64}" style="max-width:100%; width:100%; height:auto; display:block; margin:0 auto;" />'
+                        st.markdown(_img_html, unsafe_allow_html=True)
+                    except Exception:
+                        st.image(img_path, width=1200)
                 else:
-                    st.info("📁 Waiting for: Heat map 5.xlsx")
+                    st.info('📁 Waiting for: Heat_map_5.png')
             except Exception as e:
-                st.warning(f"Could not load heatmap: {str(e)}")
+                st.warning(f'Could not load heatmap image: {str(e)}')
 
         with rsi_tabs[1]:
             st.write("**Recognition, Societal Impact & Inclusivity - KPI by Full Time Equivalent (FTE)**")
             try:
-                heatmap_file = os.path.join(root_dir, 'data', 'Heat map 6.xlsx')
-                if os.path.exists(heatmap_file):
-                    fig, df_below, df_raw = create_heatmap_visualization(heatmap_file, side_cols=[4], left_margin=560, one_decimal_first_col=True, force_decimals=3, no_gray_first_col=True)
-                    if fig:
-                        st.markdown(get_heatmap_legend_html(), unsafe_allow_html=True)
-                        st.plotly_chart(fig, use_container_width=False, config={'staticPlot': True})
-                    if df_below is not None and not df_below.empty:
-                        st.markdown("---")
-                        st.markdown("**Additional Data**")
-                        render_gray_table(df_below)
+                # Use only pre-rendered image for Heat Map 6
+                img_path = os.path.join(root_dir, 'data', 'Heat_map_6.png')
+                if os.path.exists(img_path):
+                    st.markdown(get_heatmap_legend_html(), unsafe_allow_html=True)
+                    try:
+                        with open(img_path, 'rb') as _f:
+                            _img_bytes = _f.read()
+                        _img_b64 = base64.b64encode(_img_bytes).decode('utf-8')
+                        _img_html = f'<img src="data:image/png;base64,{_img_b64}" style="max-width:100%; width:100%; height:auto; display:block; margin:0 auto;" />'
+                        st.markdown(_img_html, unsafe_allow_html=True)
+                    except Exception:
+                        st.image(img_path, width=1200)
                 else:
-                    st.info("📁 Waiting for: Heat map 6.xlsx")
+                    st.info('📁 Waiting for: Heat_map_6.png')
             except Exception as e:
-                st.warning(f"Could not load heatmap: {str(e)}")
+                st.warning(f'Could not load heatmap image: {str(e)}')
 
         with rsi_tabs[2]:
             st.write("**Recognition, Societal Impact & Inclusivity - KPI by million (USD)**")
             try:
-                heatmap_file = os.path.join(root_dir, 'data', 'Heat map 7.xlsx')
-                if os.path.exists(heatmap_file):
-                    fig, df_below, df_raw = create_heatmap_visualization(heatmap_file, side_cols=[4], left_margin=560, one_decimal_first_col=True, force_decimals=3, no_gray_first_col=True)
-                    if fig:
-                        st.markdown(get_heatmap_legend_html(), unsafe_allow_html=True)
-                        st.plotly_chart(fig, use_container_width=False, config={'staticPlot': True})
-                    if df_below is not None and not df_below.empty:
-                        st.markdown("---")
-                        st.markdown("**Additional Data**")
-                        render_gray_table(df_below)
+                # Use only pre-rendered image for Heat Map 7
+                img_path = os.path.join(root_dir, 'data', 'Heat_map_7.png')
+                if os.path.exists(img_path):
+                    st.markdown(get_heatmap_legend_html(), unsafe_allow_html=True)
+                    try:
+                        with open(img_path, 'rb') as _f:
+                            _img_bytes = _f.read()
+                        _img_b64 = base64.b64encode(_img_bytes).decode('utf-8')
+                        _img_html = f'<img src="data:image/png;base64,{_img_b64}" style="max-width:100%; width:100%; height:auto; display:block; margin:0 auto;" />'
+                        st.markdown(_img_html, unsafe_allow_html=True)
+                    except Exception:
+                        st.image(img_path, width=1200)
                 else:
-                    st.info("📁 Waiting for: Heat map 7.xlsx")
+                    st.info('📁 Waiting for: Heat_map_7.png')
             except Exception as e:
-                st.warning(f"Could not load heatmap: {str(e)}")
+                st.warning(f'Could not load heatmap image: {str(e)}')
 
         with rsi_tabs[3]:
             st.write("**Recognition, Societal Impact & Inclusivity - KPI by Number over time**")
             # Create focused sub-tabs for Recognition and Societal Impact
             rsi_ot_sub = st.tabs(["Recognition and Reputation", "Societal Impact and Inclusion"]) 
             # Base heatmap file fallback
-            heatmap_file = os.path.join(root_dir, 'data', 'Heat map 5.xlsx')
-
+            # For Recognition and Societal Impact, prefer dedicated 4-2 Excel files; otherwise use Heat_map_5.png image.
             with rsi_ot_sub[0]:
                 try:
-                    # Prefer dedicated Heat map 4-2 recognition file; fall back to Heat map 5
-                    rec_file = os.path.join(root_dir, 'data', 'Heat map 4-2 Recognition and Reputation.xlsx')
-                    rec_choice = rec_file if os.path.exists(rec_file) else heatmap_file
-                    if os.path.exists(rec_choice):
-                        fig, df_below, df_raw = create_heatmap_visualization(
-                            rec_choice,
-                            zero_decimal_cols=['Thompson', 'Thomson'],
-                            one_decimal_cols=['per IRS', 'per irs'],
-                            zero_decimal_rows=['per program target', 'per programme target'],
-                            force_decimals=0,
-                            kpi_group_filter='recognition',
-                            kpi_group_row=2,
-                            extra_top=30,
-                            group_gap=40
-                        )
-                        if fig:
-                            st.markdown(get_heatmap_legend_html(), unsafe_allow_html=True)
-                            st.plotly_chart(fig, use_container_width=False, config={'staticPlot': True})
-                        if df_below is not None and not df_below.empty:
-                            st.markdown('---')
-                            st.markdown('**Additional Data**')
-                            render_gray_table(df_below)
+                    # Use the pre-rendered image for Recognition and Reputation (no Excel fallback)
+                    img_path = os.path.join(root_dir, 'data', 'Heat map 4-2 Recognition and Reputation.png')
+                    if os.path.exists(img_path):
+                        st.markdown(get_heatmap_legend_html(), unsafe_allow_html=True)
+                        try:
+                            with open(img_path, 'rb') as _f:
+                                _img_bytes = _f.read()
+                            _img_b64 = base64.b64encode(_img_bytes).decode('utf-8')
+                            _img_html = f'<img src="data:image/png;base64,{_img_b64}" style="max-width:100%; width:100%; height:auto; display:block; margin:0 auto;" />'
+                            st.markdown(_img_html, unsafe_allow_html=True)
+                        except Exception:
+                            st.image(img_path, width=1200)
                     else:
-                        st.info('📁 Waiting for: Heat map 5.xlsx or Recognition file')
+                        st.info('📁 Waiting for: Heat map 4-2 Recognition and Reputation.png')
                 except Exception as e:
-                    st.warning(f"Could not load Recognition heatmap: {str(e)}")
+                    st.warning(f'Could not load Recognition heatmap: {str(e)}')
 
             with rsi_ot_sub[1]:
                 try:
-                    soc_file = os.path.join(root_dir, 'data', 'Heat map 4-2 Society Impact and Inclusion.xlsx')
-                    soc_choice = soc_file if os.path.exists(soc_file) else heatmap_file
-                    if os.path.exists(soc_choice):
-                        fig, df_below, df_raw = create_heatmap_visualization(
-                            soc_choice,
-                            zero_decimal_cols=['Thompson', 'Thomson'],
-                            one_decimal_cols=['per IRS', 'per irs'],
-                            zero_decimal_rows=['per program target', 'per programme target'],
-                            force_decimals=0,
-                            kpi_group_filter='societal',
-                            kpi_group_row=2,
-                            extra_top=30,
-                            group_gap=40
-                        )
-                        if fig:
-                            st.markdown(get_heatmap_legend_html(), unsafe_allow_html=True)
-                            st.plotly_chart(fig, use_container_width=False, config={'staticPlot': True})
-                        if df_below is not None and not df_below.empty:
-                            st.markdown('---')
-                            st.markdown('**Additional Data**')
-                            render_gray_table(df_below)
+                    # Use the pre-rendered image for Society Impact and Inclusion (no Excel fallback)
+                    img_path = os.path.join(root_dir, 'data', 'Heat map 4-2 Society Impact and Inclusion.png')
+                    if os.path.exists(img_path):
+                        st.markdown(get_heatmap_legend_html(), unsafe_allow_html=True)
+                        try:
+                            with open(img_path, 'rb') as _f:
+                                _img_bytes = _f.read()
+                            _img_b64 = base64.b64encode(_img_bytes).decode('utf-8')
+                            _img_html = f'<img src="data:image/png;base64,{_img_b64}" style="max-width:100%; width:100%; height:auto; display:block; margin:0 auto;" />'
+                            st.markdown(_img_html, unsafe_allow_html=True)
+                        except Exception:
+                            st.image(img_path, width=1200)
                     else:
-                        st.info('📁 Waiting for: Heat map 5.xlsx or Societal Impact file')
+                        st.info('📁 Waiting for: Heat map 4-2 Society Impact and Inclusion.png')
                 except Exception as e:
-                    st.warning(f"Could not load Societal Impact heatmap: {str(e)}")
+                    st.warning(f'Could not load Societal Impact heatmap: {str(e)}')
 
 # Service Units Tab (now third)
 with tab3:
