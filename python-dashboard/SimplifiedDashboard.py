@@ -1159,9 +1159,9 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                     # If rendering the 4-1 or 4-2 special workbooks (Capacity/Product or Society Impact), open a larger gap
                     if (('4-1' in bn and ('capacity' in bn or 'product' in bn)) or
                         ('4-2' in bn and ('societ' in bn or 'inclusion' in bn or 'impact' in bn))):
-                        # moderate gap for these special files
-                        ann_x = gx_inner - 0.12
-                        ann_anchor = 'right'
+                        # increase margin gap for 4-1/4-2 special workbooks
+                        ann_x = gx_inner - 0.18
+                        ann_anchor = 'left'
                     elif ('capacity build' in gn or 'capacity building' in gn or 'product development' in gn or
                           'societ' in gn or 'inclusion' in gn or 'impact' in gn):
                         # slightly smaller fallback gap for Capacity/Product/Societal groups
@@ -1172,6 +1172,7 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                         ann_x = gx_ann
                         ann_anchor = 'left'
                     ann_align = 'right' if ann_anchor == 'right' else 'left'
+                    # Use Plotly's align/xanchor settings instead of embedding HTML
                     fig.add_annotation(
                         xref='paper', yref='y',
                         x=ann_x, y=y_center_label,
