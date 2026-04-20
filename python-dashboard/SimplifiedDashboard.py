@@ -1160,7 +1160,7 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                     if (('4-1' in bn and ('capacity' in bn or 'product' in bn)) or
                         ('4-2' in bn and ('societ' in bn or 'inclusion' in bn or 'impact' in bn))):
                         # increase margin gap for 4-1/4-2 special workbooks
-                        ann_x = gx_inner - 0.18
+                        ann_x = gx_inner - 0.25
                         ann_anchor = 'left'
                     elif ('capacity build' in gn or 'capacity building' in gn or 'product development' in gn or
                           'societ' in gn or 'inclusion' in gn or 'impact' in gn):
