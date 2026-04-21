@@ -73,19 +73,22 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
 
     # Determine if we should suppress header coloring for specific KPI files
     suppress_header_color = False
+    is_service_unit_file = False
+    is_program_file = False
     try:
         bn = os.path.basename(excel_file_path).lower()
         if 'program output' in bn or 'service unit' in bn:
             suppress_header_color = True
+        if 'service unit' in bn:
+            is_service_unit_file = True
+        if 'program output' in bn:
+            is_program_file = True
     except Exception:
         suppress_header_color = False
+        is_service_unit_file = False
+        is_program_file = False
     # For service unit files, also suppress coloring for row 2 (secondary header)
-    suppress_row2_header = False
-    try:
-        if 'service unit' in bn:
-            suppress_row2_header = True
-    except Exception:
-        suppress_row2_header = False
+    suppress_row2_header = is_service_unit_file
     
     # Build HTML table
     html = '<table style="border-collapse: collapse; width: 100%; table-layout: fixed; font-family: Arial, sans-serif; background-color: white;">'
@@ -124,6 +127,23 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
         # If this is a Service Unit file, suppress highlights triggered by the keyword
         if highlight_row and suppress_row2_header:
             highlight_row = False
+
+        # Detect section header rows (merged across columns or bold font) for Program/Service files
+        row_is_section_header = False
+        if is_program_file or is_service_unit_file:
+            try:
+                for col_idx in range(1, max_col + 1):
+                    fmt_cell = ws_format[f"{get_column_letter(col_idx)}{row_idx}"]
+                    if getattr(fmt_cell, 'font', None) and getattr(fmt_cell.font, 'bold', False):
+                        row_is_section_header = True
+                        break
+                if not row_is_section_header:
+                    for mr in ws_format.merged_cells.ranges:
+                        if mr.min_row == row_idx and (mr.max_col - mr.min_col + 1) >= 2:
+                            row_is_section_header = True
+                            break
+            except Exception:
+                row_is_section_header = False
 
         html += '<tr>'
         for col_idx in range(1, max_col + 1):
@@ -227,7 +247,12 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                 except Exception:
                     pass
                 # make column header font slightly larger
-                if suppress_header_color:
+                # For Service Unit files, use a light grey header; for other suppressed files use white; otherwise green
+                if is_service_unit_file:
+                    # widen first column only for service unit tables
+                    width_style = ' width: 30%;' if col_idx == 1 else ''
+                    html += f'<th style="background-color: #e0e0e0; color: black; font-weight: bold; text-align: center; font-size: 11pt;{width_style}" rowspan="{rowspan}" colspan="{colspan}">{header_display}</th>'
+                elif suppress_header_color:
                     html += f'<th style="background-color: white; color: black; font-weight: bold; text-align: center; font-size: 11pt;" rowspan="{rowspan}" colspan="{colspan}">{header_display}</th>'
                 else:
                     html += f'<th style="background-color: #00891a; color: white; font-weight: bold; text-align: center; font-size: 11pt;" rowspan="{rowspan}" colspan="{colspan}">{header_display}</th>'
@@ -239,6 +264,9 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                     styles.append('color: white')
                     styles.append('font-weight: bold')
                 styles.append(f'text-align: {align}')
+                # Add section separator for Program and Service Unit tables
+                if row_is_section_header and (is_program_file or is_service_unit_file) and row_idx != 1:
+                    styles.append('border-top: 2px solid #000')
                 # If this is a Service Unit file and row 2 or the Service Unit header row (row 9), force no green header
                 if suppress_row2_header and (row_idx == 2 or row_idx == 9 or
                                              any(c.value is not None and 'service unit key performance' in str(c.value).lower() for c in row_data)):
@@ -321,6 +349,9 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                 # First column cells (row headers) should have slightly larger font
                 if col_idx == 1:
                     styles.append('font-size: 11pt')
+                    # For Service Unit tables, increase the first column width
+                    if is_service_unit_file:
+                        styles.append('width: 30%')
                 if bg_color:
                     styles.append(f'background-color: {bg_color}')
                 if text_color:
