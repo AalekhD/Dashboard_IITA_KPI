@@ -273,14 +273,17 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                 # Add section separator for Program and Service Unit tables
                 if row_is_section_header and (is_program_file or is_service_unit_file) and row_idx != 1:
                     styles.append('border-top: 2px solid #000')
-                # If this is a Service Unit file and row 2 or the Service Unit header row (row 9), force no green header
-                if suppress_row2_header and (row_idx == 9 or
+                # If this is a Service Unit file and row 2 or the Service Unit header row (row 9),
+                # force no green header and unify font size so row 2 and row 9 match visually
+                if suppress_row2_header and (row_idx == 2 or row_idx == 9 or
                                              any(c.value is not None and 'service unit key performance' in str(c.value).lower() for c in row_data)):
                     # remove any green highlight and use light-gray background with black text (Service Unit header rows)
                     styles = [s for s in styles if 'background-color' not in s and 'color:' not in s]
                     styles.append('background-color: #e0e0e0')
                     styles.append('color: black')
                     styles.append('font-weight: bold')
+                    # ensure the font size for these service-unit header rows matches the main header
+                    styles.append('font-size: 11pt')
                     # add a strong top border to separate this header row from above content
                     styles.append('border-top: 3px solid #000')
                 # Color coding for Actual column only (default Excel column 5)
@@ -368,11 +371,15 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                 if text_color:
                     styles.append(f'color: {text_color}')
                 style_attr = '; '.join(styles)
-                # If this is the Service Unit header row (row 9) or contains the phrase, ensure bold display
-                if row_idx == 9 or any(c.value is not None and 'service unit key performance' in str(c.value).lower() for c in row_data):
+                # If this is the Service Unit header row (row 9) or row 2 or contains the phrase,
+                # ensure bold display and consistent font sizing
+                if row_idx == 9 or row_idx == 2 or any(c.value is not None and 'service unit key performance' in str(c.value).lower() for c in row_data):
                     # ensure style includes bold
                     if 'font-weight' not in style_attr:
                         style_attr = (style_attr + '; font-weight: bold').strip()
+                    # ensure style includes the intended font size for consistency
+                    if 'font-size' not in style_attr:
+                        style_attr = (style_attr + '; font-size: 11pt').strip()
                     cell_display = f'<strong>{cell_value}</strong>'
                 else:
                     cell_display = cell_value
