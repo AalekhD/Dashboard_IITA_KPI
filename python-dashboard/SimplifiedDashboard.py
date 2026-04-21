@@ -249,9 +249,15 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                 # make column header font slightly larger
                 # For Service Unit files, use a light grey header; for other suppressed files use white; otherwise green
                 if is_service_unit_file:
-                    # widen first column only for service unit tables
-                    width_style = ' width: 30%;' if col_idx == 1 else ''
-                    html += f'<th style="background-color: #e0e0e0; color: black; font-weight: bold; text-align: center; font-size: 11pt;{width_style}" rowspan="{rowspan}" colspan="{colspan}">{header_display}</th>'
+                    # set first and second column widths for service unit tables (col1 narrower, col2 wider)
+                    if col_idx == 1:
+                        width_style = ' width: 22%;'
+                    elif col_idx == 2:
+                        width_style = ' width: 30%;'
+                    else:
+                        width_style = ''
+                    # add a stronger bottom border for the top header row in Service Unit tables
+                    html += f'<th style="background-color: #e0e0e0; color: black; font-weight: bold; text-align: center; font-size: 11pt;{width_style} border-bottom: 3px solid #000;" rowspan="{rowspan}" colspan="{colspan}">{header_display}</th>'
                 elif suppress_header_color:
                     html += f'<th style="background-color: white; color: black; font-weight: bold; text-align: center; font-size: 11pt;" rowspan="{rowspan}" colspan="{colspan}">{header_display}</th>'
                 else:
@@ -268,13 +274,15 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                 if row_is_section_header and (is_program_file or is_service_unit_file) and row_idx != 1:
                     styles.append('border-top: 2px solid #000')
                 # If this is a Service Unit file and row 2 or the Service Unit header row (row 9), force no green header
-                if suppress_row2_header and (row_idx == 2 or row_idx == 9 or
+                if suppress_row2_header and (row_idx == 9 or
                                              any(c.value is not None and 'service unit key performance' in str(c.value).lower() for c in row_data)):
-                    # remove any green highlight and use white background with black text
+                    # remove any green highlight and use light-gray background with black text (Service Unit header rows)
                     styles = [s for s in styles if 'background-color' not in s and 'color:' not in s]
-                    styles.append('background-color: white')
+                    styles.append('background-color: #e0e0e0')
                     styles.append('color: black')
                     styles.append('font-weight: bold')
+                    # add a strong top border to separate this header row from above content
+                    styles.append('border-top: 3px solid #000')
                 # Color coding for Actual column only (default Excel column 5)
                 bg_color = None
                 text_color = None
@@ -349,9 +357,12 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                 # First column cells (row headers) should have slightly larger font
                 if col_idx == 1:
                     styles.append('font-size: 11pt')
-                    # For Service Unit tables, increase the first column width
+                    # For Service Unit tables, reduce the first column width slightly
                     if is_service_unit_file:
-                        styles.append('width: 30%')
+                        styles.append('width: 22%')
+                # For Service Unit tables, make the second column a bit wider
+                if is_service_unit_file and col_idx == 2:
+                    styles.append('width: 30%')
                 if bg_color:
                     styles.append(f'background-color: {bg_color}')
                 if text_color:
@@ -1302,7 +1313,7 @@ def render_gray_table(df):
 # Helper: return HTML legend matching Service KPI styling (red/yellow/green)
 def get_heatmap_legend_html():
     return (
-        '<div style="display:flex; gap:12px; align-items:center; margin-bottom:8px; font-family: Arial, sans-serif;">'
+        '<div style="display:flex; gap:12px; align-items:center; margin-top:0px; margin-bottom:2px; font-family: Arial, sans-serif;">'
         '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#D73027;display:inline-block;border-radius:3px;"></span><span>No Progress</span></div>'
         '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#FFFF00;display:inline-block;border-radius:3px; border:1px solid #999;"></span><span>50 % Progress</span></div>'
         '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#1A7A1A;display:inline-block;border-radius:3px;"></span><span>Target Achieved</span></div>'
@@ -1327,7 +1338,7 @@ with tab1:
         html_programs = excel_to_html_with_merged_cells(program_file, no_decimals=False)
         # Legend (red = No Progress, yellow = near target, green = at/above target)
         html_legend = (
-            '<div style="display:flex; gap:12px; align-items:center; margin-bottom:8px; font-family: Arial, sans-serif;">'
+            '<div style="display:flex; gap:12px; align-items:center; margin-top:0px; margin-bottom:2px; font-family: Arial, sans-serif;">'
             '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#D73027;display:inline-block;border-radius:3px;"></span><span>No Progress</span></div>'
             '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#FFFF00;display:inline-block;border-radius:3px; border:1px solid #999;"></span><span>50 % Progress</span></div>'
             '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#1A7A1A;display:inline-block;border-radius:3px;"></span><span>Target Achieved</span></div>'
@@ -1390,7 +1401,7 @@ with tab2:
                         with open(img_path, 'rb') as _f:
                             _img_bytes = _f.read()
                         _img_b64 = base64.b64encode(_img_bytes).decode('utf-8')
-                        _img_html = f'<img src="data:image/png;base64,{_img_b64}" style="max-width:100%; width:100%; height:auto; display:block; margin:0 auto;" />'
+                        _img_html = f'<img src="data:image/png;base64,{_img_b64}" style="max-width:100%; width:100%; height:auto; display:block; margin:0 auto; margin-top:0px;" />'
                         st.markdown(_img_html, unsafe_allow_html=True)
                     except Exception:
                         # Fallback to a large fixed width display
@@ -1411,7 +1422,7 @@ with tab2:
                         with open(img_path, 'rb') as _f:
                             _img_bytes = _f.read()
                         _img_b64 = base64.b64encode(_img_bytes).decode('utf-8')
-                        _img_html = f'<img src="data:image/png;base64,{_img_b64}" style="max-width:100%; width:100%; height:auto; display:block; margin:0 auto;" />'
+                        _img_html = f'<img src="data:image/png;base64,{_img_b64}" style="max-width:100%; width:100%; height:auto; display:block; margin:0 auto; margin-top:0px;" />'
                         st.markdown(_img_html, unsafe_allow_html=True)
                     except Exception:
                         st.image(img_path, width=1200)
@@ -1431,7 +1442,7 @@ with tab2:
                         with open(img_path, 'rb') as _f:
                             _img_bytes = _f.read()
                         _img_b64 = base64.b64encode(_img_bytes).decode('utf-8')
-                        _img_html = f'<img src="data:image/png;base64,{_img_b64}" style="max-width:100%; width:100%; height:auto; display:block; margin:0 auto;" />'
+                        _img_html = f'<img src="data:image/png;base64,{_img_b64}" style="max-width:100%; width:100%; height:auto; display:block; margin:0 auto; margin-top:0px;" />'
                         st.markdown(_img_html, unsafe_allow_html=True)
                     except Exception:
                         st.image(img_path, width=1200)
@@ -1480,7 +1491,7 @@ with tab2:
                                 with open(img_path, 'rb') as _f:
                                     _img_bytes = _f.read()
                                 _img_b64 = base64.b64encode(_img_bytes).decode('utf-8')
-                                _img_html = f'<img src="data:image/png;base64,{_img_b64}" style="max-width:100%; width:100%; height:auto; display:block; margin:0 auto;" />'
+                                _img_html = f'<img src="data:image/png;base64,{_img_b64}" style="max-width:100%; width:100%; height:auto; display:block; margin:0 auto; margin-top:0px;" />'
                                 st.markdown(_img_html, unsafe_allow_html=True)
                             except Exception:
                                 st.image(img_path, width=1200)
@@ -1496,7 +1507,7 @@ with tab2:
                                 with open(img_path, 'rb') as _f:
                                     _img_bytes = _f.read()
                                 _img_b64 = base64.b64encode(_img_bytes).decode('utf-8')
-                                _img_html = f'<img src="data:image/png;base64,{_img_b64}" style="max-width:100%; width:100%; height:auto; display:block; margin:0 auto;" />'
+                                _img_html = f'<img src="data:image/png;base64,{_img_b64}" style="max-width:100%; width:100%; height:auto; display:block; margin:0 auto; margin-top:0px;" />'
                                 st.markdown(_img_html, unsafe_allow_html=True)
                             except Exception:
                                 st.image(img_path, width=1200)
@@ -1526,7 +1537,7 @@ with tab2:
                         with open(img_path, 'rb') as _f:
                             _img_bytes = _f.read()
                         _img_b64 = base64.b64encode(_img_bytes).decode('utf-8')
-                        _img_html = f'<img src="data:image/png;base64,{_img_b64}" style="max-width:100%; width:100%; height:auto; display:block; margin:0 auto;" />'
+                        _img_html = f'<img src="data:image/png;base64,{_img_b64}" style="max-width:100%; width:100%; height:auto; display:block; margin:0 auto; margin-top:0px;" />'
                         st.markdown(_img_html, unsafe_allow_html=True)
                     except Exception:
                         st.image(img_path, width=1200)
@@ -1546,7 +1557,7 @@ with tab2:
                         with open(img_path, 'rb') as _f:
                             _img_bytes = _f.read()
                         _img_b64 = base64.b64encode(_img_bytes).decode('utf-8')
-                        _img_html = f'<img src="data:image/png;base64,{_img_b64}" style="max-width:100%; width:100%; height:auto; display:block; margin:0 auto;" />'
+                        _img_html = f'<img src="data:image/png;base64,{_img_b64}" style="max-width:100%; width:100%; height:auto; display:block; margin:0 auto; margin-top:0px;" />'
                         st.markdown(_img_html, unsafe_allow_html=True)
                     except Exception:
                         st.image(img_path, width=1200)
@@ -1566,7 +1577,7 @@ with tab2:
                         with open(img_path, 'rb') as _f:
                             _img_bytes = _f.read()
                         _img_b64 = base64.b64encode(_img_bytes).decode('utf-8')
-                        _img_html = f'<img src="data:image/png;base64,{_img_b64}" style="max-width:100%; width:100%; height:auto; display:block; margin:0 auto;" />'
+                        _img_html = f'<img src="data:image/png;base64,{_img_b64}" style="max-width:100%; width:100%; height:auto; display:block; margin:0 auto; margin-top:0px;" />'
                         st.markdown(_img_html, unsafe_allow_html=True)
                     except Exception:
                         st.image(img_path, width=1200)
@@ -1591,7 +1602,7 @@ with tab2:
                             with open(img_path, 'rb') as _f:
                                 _img_bytes = _f.read()
                             _img_b64 = base64.b64encode(_img_bytes).decode('utf-8')
-                            _img_html = f'<img src="data:image/png;base64,{_img_b64}" style="max-width:100%; width:100%; height:auto; display:block; margin:0 auto;" />'
+                            _img_html = f'<img src="data:image/png;base64,{_img_b64}" style="max-width:100%; width:100%; height:auto; display:block; margin:0 auto; margin-top:0px;" />'
                             st.markdown(_img_html, unsafe_allow_html=True)
                         except Exception:
                             st.image(img_path, width=1200)
@@ -1610,7 +1621,7 @@ with tab2:
                             with open(img_path, 'rb') as _f:
                                 _img_bytes = _f.read()
                             _img_b64 = base64.b64encode(_img_bytes).decode('utf-8')
-                            _img_html = f'<img src="data:image/png;base64,{_img_b64}" style="max-width:100%; width:100%; height:auto; display:block; margin:0 auto;" />'
+                            _img_html = f'<img src="data:image/png;base64,{_img_b64}" style="max-width:100%; width:100%; height:auto; display:block; margin:0 auto; margin-top:0px;" />'
                             st.markdown(_img_html, unsafe_allow_html=True)
                         except Exception:
                             st.image(img_path, width=1200)
@@ -1631,7 +1642,7 @@ with tab3:
         html_services = excel_to_html_with_merged_cells(service_file, no_decimals=True, highlight_row_keyword='service unit key performance', target_col=3, actual_col=4)
         # Legend for Service Unit KPIs
         html_legend_srv = (
-            '<div style="display:flex; gap:12px; align-items:center; margin-bottom:8px; font-family: Arial, sans-serif;">'
+            '<div style="display:flex; gap:12px; align-items:center; margin-top:0px; margin-bottom:2px; font-family: Arial, sans-serif;">'
             '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#D73027;display:inline-block;border-radius:3px;"></span><span>No Progress</span></div>'
             '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#FFFF00;display:inline-block;border-radius:3px; border:1px solid #999;"></span><span>50 % Progress</span></div>'
             '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#1A7A1A;display:inline-block;border-radius:3px;"></span><span>Target Achieved</span></div>'
