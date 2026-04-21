@@ -269,7 +269,9 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                     styles.append('background-color: #00891a')
                     styles.append('color: white')
                     styles.append('font-weight: bold')
-                styles.append(f'text-align: {align}')
+                # Center-align the top header row and the Service Unit header row (row 9)
+                cell_align = 'center' if row_idx in (1, 9) else align
+                styles.append(f'text-align: {cell_align}')
                 # Add section separator for Program and Service Unit tables
                 if row_is_section_header and (is_program_file or is_service_unit_file) and row_idx != 1:
                     styles.append('border-top: 2px solid #000')
