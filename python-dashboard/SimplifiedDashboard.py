@@ -227,15 +227,23 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
             else:
                 cell_value = ""
             
-            # Determine if original cell was numeric so we can align numbers right
+            # Determine if original cell was numeric so we can align numbers/columns
             is_numeric = isinstance(cell_data.value, (int, float))
-            # Column-based rule: first three columns should be left-aligned
-            if col_idx <= 3:
-                align = 'left'
-            elif is_numeric:
-                align = 'right'
+            # For Service Unit tables: left-align columns 1 and 2 (except header rows),
+            # center other columns. For other tables keep existing column rules.
+            if is_service_unit_file:
+                if col_idx in (1, 2):
+                    align = 'left'
+                else:
+                    align = 'center'
             else:
-                align = 'left'
+                # Column-based rule: first three columns should be left-aligned
+                if col_idx <= 3:
+                    align = 'left'
+                elif is_numeric:
+                    align = 'right'
+                else:
+                    align = 'left'
 
             # Add styling for headers (first row)
             if row_idx == 1:
@@ -253,7 +261,7 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                     if col_idx == 1:
                         width_style = ' width: 22%;'
                     elif col_idx == 2:
-                        width_style = ' width: 30%;'
+                        width_style = ' width: 24%;'
                     else:
                         width_style = ''
                     # add a stronger bottom border for the top header row in Service Unit tables
@@ -267,7 +275,6 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                 styles = []
                 if highlight_row:
                     styles.append('background-color: #00891a')
-                    styles.append('color: white')
                     styles.append('font-weight: bold')
                 # Center-align the top header row and the Service Unit header row (row 9)
                 cell_align = 'center' if row_idx in (1, 9) else align
@@ -368,11 +375,13 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                         styles.append('width: 22%')
                 # For Service Unit tables, make the second column a bit wider
                 if is_service_unit_file and col_idx == 2:
-                    styles.append('width: 30%')
+                    styles.append('width: 24%')
                 if bg_color:
                     styles.append(f'background-color: {bg_color}')
-                if text_color:
-                    styles.append(f'color: {text_color}')
+                # We will force data text color to black for consistency (append below)
+                # Force data cells to black text (td). Header <th> handled separately.
+                styles = [s for s in styles if not s.strip().startswith('color:')]
+                styles.append('color: black')
                 style_attr = '; '.join(styles)
                 # If this is the Service Unit header row (row 9) or contains the phrase,
                 # ensure bold display and consistent font sizing
@@ -1820,10 +1829,14 @@ with tab3:
                                 is_numeric = False
 
                         new_open = open_tag
-                        # Priority: if cell starts within last-two logical cols -> right
+                        # Priority: if cell starts within last-two logical cols -> right ONLY if numeric
                         # Else if numeric and this row isn't in first-two -> right
                         if tag_start >= min_last:
-                            new_open = update_tag_alignment(new_open, 'right')
+                            if is_numeric:
+                                new_open = update_tag_alignment(new_open, 'right')
+                            else:
+                                # leave alignment as-is (preserve earlier centering for non-numeric)
+                                pass
                         elif is_numeric and i >= 2:
                             new_open = update_tag_alignment(new_open, 'right')
 
