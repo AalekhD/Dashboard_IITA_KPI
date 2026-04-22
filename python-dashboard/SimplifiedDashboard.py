@@ -293,14 +293,19 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                 # Only center row 9 when rendering a Service Unit file
                 cell_align = 'center' if (row_idx == 1 or (is_service_unit_file and row_idx == 9)) else align
                 styles.append(f'text-align: {cell_align}')
-                # For Service Unit tables add a slightly thicker bottom separator
-                # for each data row (keeps header/band rows intact).
-                if is_service_unit_file:
+                # For Service Unit and Program Output tables add a slightly thicker
+                # gray bottom separator for data rows (keeps header/band rows intact).
+                if is_service_unit_file or is_program_file:
                     try:
+                        # For Service Unit files we want to suppress the special
+                        # Service Unit header row (row 9). For Program files this
+                        # will be False.
                         is_srv_header_row = suppress_row2_header and (row_idx == 9 or any(c.value is not None and 'service unit key performance' in str(c.value).lower() for c in row_data))
                     except Exception:
                         is_srv_header_row = False
-                    if not is_srv_header_row and row_idx != 1:
+                    # Don't add the gray bottom border for top header (row 1)
+                    # or for detected section/header rows.
+                    if not is_srv_header_row and row_idx != 1 and not row_is_section_header:
                         styles.append('border-bottom: 2px solid rgba(0,0,0,0.25)')
                 # Add section separator for Program and Service Unit tables
                 # Do not add a top border before the Service Unit header row (row 9);
