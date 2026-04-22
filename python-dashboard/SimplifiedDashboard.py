@@ -295,7 +295,9 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                 cell_align = 'center' if (row_idx == 1 or (is_service_unit_file and row_idx == 9)) else align
                 styles.append(f'text-align: {cell_align}')
                 # Add section separator for Program and Service Unit tables
-                if row_is_section_header and (is_program_file or is_service_unit_file) and row_idx != 1:
+                # Do not add a top border before the Service Unit header row (row 9);
+                # we'll add the stronger border below that row instead.
+                if row_is_section_header and (is_program_file or is_service_unit_file) and row_idx != 1 and not (is_service_unit_file and row_idx == 9):
                     styles.append('border-top: 2px solid #000')
                 # If this is a Service Unit file and the Service Unit header row (row 9),
                 # force no green header and unify font size so row 9 matches visually
@@ -309,8 +311,8 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                     # ensure the font size for these service-unit header rows matches the main header
                     styles.append('font-size: 11pt')
                     styles.append('font-family: Arial, sans-serif')
-                    # add a strong top border to separate this header row from above content
-                    styles.append('border-top: 3px solid #000')
+                    # add a strong bottom border to separate this header row from the content below
+                    styles.append('border-bottom: 3px solid #000')
                 # Color coding for Actual column only (default Excel column 5)
                 bg_color = None
                 text_color = None
