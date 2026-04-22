@@ -236,8 +236,16 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                     align = 'left'
                 else:
                     align = 'center'
+            elif is_program_file:
+                # For Program Output files ensure first two columns are left-aligned
+                if col_idx in (1, 2):
+                    align = 'left'
+                elif is_numeric:
+                    align = 'right'
+                else:
+                    align = 'left'
             else:
-                # Column-based rule: first three columns should be left-aligned
+                # Column-based rule: first three columns should be left-aligned for other files
                 if col_idx <= 3:
                     align = 'left'
                 elif is_numeric:
@@ -255,7 +263,8 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                 except Exception:
                     pass
                 # make column header font slightly larger
-                # For Service Unit files, use a light grey header; for other suppressed files use white; otherwise green
+                # For Service Unit files, use a light grey header; for Program files also use light grey
+                # but left-align the first two header cells; for other suppressed files use white; otherwise green
                 if is_service_unit_file:
                     # set first and second column widths for service unit tables (col1 narrower, col2 wider)
                     if col_idx == 1:
@@ -266,6 +275,11 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                         width_style = ''
                     # add a stronger bottom border for the top header row in Service Unit tables
                     html += f'<th style="background-color: #e0e0e0; color: black; font-weight: bold; text-align: center; font-size: 11pt; font-family: Arial, sans-serif;{width_style} border-bottom: 3px solid #000;" rowspan="{rowspan}" colspan="{colspan}">{header_display}</th>'
+                elif is_program_file:
+                    # Program Output: use light-gray header and left-align first two columns
+                    width_style = ''
+                    text_align = 'left' if col_idx in (1, 2) else 'center'
+                    html += f'<th style="background-color: #e0e0e0; color: black; font-weight: bold; text-align: {text_align}; font-size: 11pt; font-family: Arial, sans-serif;{width_style} border-bottom: 3px solid #000;" rowspan="{rowspan}" colspan="{colspan}">{header_display}</th>'
                 elif suppress_header_color:
                     html += f'<th style="background-color: white; color: black; font-weight: bold; text-align: center; font-size: 11pt; font-family: Arial, sans-serif;" rowspan="{rowspan}" colspan="{colspan}">{header_display}</th>'
                 else:
@@ -277,7 +291,8 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                     styles.append('background-color: #00891a')
                     styles.append('font-weight: bold')
                 # Center-align the top header row and the Service Unit header row (row 9)
-                cell_align = 'center' if row_idx in (1, 9) else align
+                # Only center row 9 when rendering a Service Unit file
+                cell_align = 'center' if (row_idx == 1 or (is_service_unit_file and row_idx == 9)) else align
                 styles.append(f'text-align: {cell_align}')
                 # Add section separator for Program and Service Unit tables
                 if row_is_section_header and (is_program_file or is_service_unit_file) and row_idx != 1:
@@ -384,8 +399,8 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                 styles.append('color: black')
                 style_attr = '; '.join(styles)
                 # If this is the Service Unit header row (row 9) or contains the phrase,
-                # ensure bold display and consistent font sizing
-                if row_idx == 9 or any(c.value is not None and 'service unit key performance' in str(c.value).lower() for c in row_data):
+                # ensure bold display and consistent font sizing. Only apply for Service Unit files.
+                if suppress_row2_header and (row_idx == 9 or any(c.value is not None and 'service unit key performance' in str(c.value).lower() for c in row_data)):
                     # ensure style includes bold
                     if 'font-weight' not in style_attr:
                         style_attr = (style_attr + '; font-weight: bold').strip()
@@ -1511,7 +1526,7 @@ with tab2:
                                 _img_html = (
                                     f'<div style="position:relative; width:100%; max-width:1200px; height:600px; margin:0 auto;">'
                                     f'<img src="data:image/png;base64,{_img_b64}" '
-                                    'style="position:absolute; top:0; left:0; width:100%; height:100%; object-fit:contain; object-position:center 10%; transform:scale(1.2); transform-origin:center center; will-change:transform;" />'
+                                    'style="position:absolute; top:0; left:0; width:100%; height:100%; object-fit:contain; object-position:center 10%;" />'
                                     '</div>'
                                 )
                                 # Reduce spacing by modifying legend's margin and embedding together
@@ -1696,7 +1711,7 @@ with tab2:
                             _img_html = (
                                 f'<div style="position:relative; width:100%; max-width:1200px; height:600px; margin:0 auto;">'
                                 f'<img src="data:image/png;base64,{_img_b64}" '
-                                'style="position:absolute; top:0; left:0; width:100%; height:100%; object-fit:contain; object-position:center 10%;" />'
+                                'style="position:absolute; top:0; left:0; width:100%; height:100%; object-fit:contain; object-position:center top;" />'
                                 '</div>'
                             )
                             st.markdown(_img_html, unsafe_allow_html=True)
