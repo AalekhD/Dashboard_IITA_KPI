@@ -269,8 +269,6 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                     # set first and second column widths for service unit tables (col1 narrower, col2 wider)
                     if col_idx == 1:
                         width_style = ' width: 22%;'
-                    elif col_idx == 2:
-                        width_style = ' width: 24%;'
                     else:
                         width_style = ''
                     # add a stronger bottom border for the top header row in Service Unit tables
@@ -390,9 +388,8 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                     # For Service Unit tables, reduce the first column width slightly
                     if is_service_unit_file:
                         styles.append('width: 22%')
-                # For Service Unit tables, make the second column a bit wider
-                if is_service_unit_file and col_idx == 2:
-                    styles.append('width: 24%')
+                # For Service Unit tables, do not set an explicit width on column 2
+                # so it matches the Program Output table behavior.
                 if bg_color:
                     styles.append(f'background-color: {bg_color}')
                 # We will force data text color to black for consistency (append below)
