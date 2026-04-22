@@ -1423,7 +1423,12 @@ with tab2:
                         with open(img_path, 'rb') as _f:
                             _img_bytes = _f.read()
                         _img_b64 = base64.b64encode(_img_bytes).decode('utf-8')
-                        _img_html = f'<img src="data:image/png;base64,{_img_b64}" style="max-width:100%; width:100%; height:auto; display:block; margin:0 auto; margin-top:0px;" />'
+                        _img_html = (
+                            f'<div style="position:relative; width:100%; max-width:1200px; height:600px; margin:0 auto;">'
+                            f'<img src="data:image/png;base64,{_img_b64}" '
+                            'style="position:absolute; top:0; left:0; width:100%; height:100%; object-fit:contain; object-position:center 10%;" />'
+                            '</div>'
+                        )
                         st.markdown(_img_html, unsafe_allow_html=True)
                     except Exception:
                         # Fallback to a large fixed width display
@@ -1444,7 +1449,12 @@ with tab2:
                         with open(img_path, 'rb') as _f:
                             _img_bytes = _f.read()
                         _img_b64 = base64.b64encode(_img_bytes).decode('utf-8')
-                        _img_html = f'<img src="data:image/png;base64,{_img_b64}" style="max-width:100%; width:100%; height:auto; display:block; margin:0 auto; margin-top:0px;" />'
+                        _img_html = (
+                            f'<div style="position:relative; width:100%; max-width:1200px; height:600px; margin:0 auto;">'
+                            f'<img src="data:image/png;base64,{_img_b64}" '
+                            'style="position:absolute; top:0; left:0; width:100%; height:100%; object-fit:contain; object-position:center 10%;" />'
+                            '</div>'
+                        )
                         st.markdown(_img_html, unsafe_allow_html=True)
                     except Exception:
                         st.image(img_path, width=1200)
@@ -1464,7 +1474,12 @@ with tab2:
                         with open(img_path, 'rb') as _f:
                             _img_bytes = _f.read()
                         _img_b64 = base64.b64encode(_img_bytes).decode('utf-8')
-                        _img_html = f'<img src="data:image/png;base64,{_img_b64}" style="max-width:100%; width:100%; height:auto; display:block; margin:0 auto; margin-top:0px;" />'
+                        _img_html = (
+                            f'<div style="position:relative; width:100%; max-width:1200px; height:600px; margin:0 auto;">'
+                            f'<img src="data:image/png;base64,{_img_b64}" '
+                            'style="position:absolute; top:0; left:0; width:100%; height:100%; object-fit:contain; object-position:center 10%;" />'
+                            '</div>'
+                        )
                         st.markdown(_img_html, unsafe_allow_html=True)
                     except Exception:
                         st.image(img_path, width=1200)
@@ -1493,7 +1508,12 @@ with tab2:
                                 with open(img_path, 'rb') as _f:
                                     _img_bytes = _f.read()
                                 _img_b64 = base64.b64encode(_img_bytes).decode('utf-8')
-                                _img_html = f'<img src="data:image/png;base64,{_img_b64}" style="max-width:100%; width:100%; height:auto; display:block; margin:0 auto; margin-top:0px;" />'
+                                _img_html = (
+                                    f'<div style="position:relative; width:100%; max-width:1200px; height:600px; margin:0 auto;">'
+                                    f'<img src="data:image/png;base64,{_img_b64}" '
+                                    'style="position:absolute; top:0; left:0; width:100%; height:100%; object-fit:contain; object-position:center 10%; transform:scale(1.2); transform-origin:center center; will-change:transform;" />'
+                                    '</div>'
+                                )
                                 # Reduce spacing by modifying legend's margin and embedding together
                                 legend_html = get_heatmap_legend_html().replace('margin-bottom:8px;', 'margin-bottom:2px;')
                                 combined_html = f'<div style="margin:0;padding:0;">{legend_html}{_img_html}</div>'
@@ -1513,7 +1533,12 @@ with tab2:
                                 with open(img_path, 'rb') as _f:
                                     _img_bytes = _f.read()
                                 _img_b64 = base64.b64encode(_img_bytes).decode('utf-8')
-                                _img_html = f'<img src="data:image/png;base64,{_img_b64}" style="max-width:100%; width:100%; height:auto; display:block; margin:0 auto; margin-top:0px;" />'
+                                _img_html = (
+                                    f'<div style="position:relative; width:100%; max-width:1200px; height:600px; margin:0 auto;">'
+                                    f'<img src="data:image/png;base64,{_img_b64}" '
+                                    'style="position:absolute; top:0; left:0; width:100%; height:100%; object-fit:contain; object-position:center 10%;" />'
+                                    '</div>'
+                                )
                                 st.markdown(_img_html, unsafe_allow_html=True)
                             except Exception:
                                 st.image(img_path, width=1200)
@@ -1529,7 +1554,12 @@ with tab2:
                                 with open(img_path, 'rb') as _f:
                                     _img_bytes = _f.read()
                                 _img_b64 = base64.b64encode(_img_bytes).decode('utf-8')
-                                _img_html = f'<img src="data:image/png;base64,{_img_b64}" style="max-width:100%; width:100%; height:auto; display:block; margin:0 auto; margin-top:0px;" />'
+                                _img_html = (
+                                    f'<div style="position:relative; width:100%; max-width:1200px; height:600px; margin:0 auto;">'
+                                    f'<img src="data:image/png;base64,{_img_b64}" '
+                                    'style="position:absolute; top:0; left:0; width:100%; height:100%; object-fit:contain; object-position:center 10%;" />'
+                                    '</div>'
+                                )
                                 st.markdown(_img_html, unsafe_allow_html=True)
                             except Exception:
                                 st.image(img_path, width=1200)
@@ -1559,7 +1589,12 @@ with tab2:
                         with open(img_path, 'rb') as _f:
                             _img_bytes = _f.read()
                         _img_b64 = base64.b64encode(_img_bytes).decode('utf-8')
-                        _img_html = f'<img src="data:image/png;base64,{_img_b64}" style="max-width:100%; width:100%; height:auto; display:block; margin:0 auto; margin-top:0px;" />'
+                        _img_html = (
+                            f'<div style="position:relative; width:100%; max-width:1200px; height:600px; margin:0 auto;">'
+                            f'<img src="data:image/png;base64,{_img_b64}" '
+                            'style="position:absolute; top:0; left:0; width:100%; height:100%; object-fit:contain; object-position:center 10%;" />'
+                            '</div>'
+                        )
                         st.markdown(_img_html, unsafe_allow_html=True)
                     except Exception:
                         st.image(img_path, width=1200)
@@ -1579,7 +1614,12 @@ with tab2:
                         with open(img_path, 'rb') as _f:
                             _img_bytes = _f.read()
                         _img_b64 = base64.b64encode(_img_bytes).decode('utf-8')
-                        _img_html = f'<img src="data:image/png;base64,{_img_b64}" style="max-width:100%; width:100%; height:auto; display:block; margin:0 auto; margin-top:0px;" />'
+                        _img_html = (
+                            f'<div style="position:relative; width:100%; max-width:1200px; height:600px; margin:0 auto;">'
+                            f'<img src="data:image/png;base64,{_img_b64}" '
+                            'style="position:absolute; top:0; left:0; width:100%; height:100%; object-fit:contain; object-position:center 10%;" />'
+                            '</div>'
+                        )
                         st.markdown(_img_html, unsafe_allow_html=True)
                     except Exception:
                         st.image(img_path, width=1200)
@@ -1599,7 +1639,12 @@ with tab2:
                         with open(img_path, 'rb') as _f:
                             _img_bytes = _f.read()
                         _img_b64 = base64.b64encode(_img_bytes).decode('utf-8')
-                        _img_html = f'<img src="data:image/png;base64,{_img_b64}" style="max-width:100%; width:100%; height:auto; display:block; margin:0 auto; margin-top:0px;" />'
+                        _img_html = (
+                            f'<div style="position:relative; width:100%; max-width:1200px; height:600px; margin:0 auto;">'
+                            f'<img src="data:image/png;base64,{_img_b64}" '
+                            'style="position:absolute; top:0; left:0; width:100%; height:100%; object-fit:contain; object-position:center 10%;" />'
+                            '</div>'
+                        )
                         st.markdown(_img_html, unsafe_allow_html=True)
                     except Exception:
                         st.image(img_path, width=1200)
@@ -1624,7 +1669,12 @@ with tab2:
                             with open(img_path, 'rb') as _f:
                                 _img_bytes = _f.read()
                             _img_b64 = base64.b64encode(_img_bytes).decode('utf-8')
-                            _img_html = f'<img src="data:image/png;base64,{_img_b64}" style="max-width:100%; width:100%; height:auto; display:block; margin:0 auto; margin-top:0px;" />'
+                            _img_html = (
+                                f'<div style="position:relative; width:100%; max-width:1200px; height:600px; margin:0 auto;">'
+                                f'<img src="data:image/png;base64,{_img_b64}" '
+                                'style="position:absolute; top:0; left:0; width:100%; height:100%; object-fit:contain; object-position:center 10%;" />'
+                                '</div>'
+                            )
                             st.markdown(_img_html, unsafe_allow_html=True)
                         except Exception:
                             st.image(img_path, width=1200)
@@ -1643,7 +1693,12 @@ with tab2:
                             with open(img_path, 'rb') as _f:
                                 _img_bytes = _f.read()
                             _img_b64 = base64.b64encode(_img_bytes).decode('utf-8')
-                            _img_html = f'<img src="data:image/png;base64,{_img_b64}" style="max-width:100%; width:100%; height:auto; display:block; margin:0 auto; margin-top:0px;" />'
+                            _img_html = (
+                                f'<div style="position:relative; width:100%; max-width:1200px; height:600px; margin:0 auto;">'
+                                f'<img src="data:image/png;base64,{_img_b64}" '
+                                'style="position:absolute; top:0; left:0; width:100%; height:100%; object-fit:contain; object-position:center 10%;" />'
+                                '</div>'
+                            )
                             st.markdown(_img_html, unsafe_allow_html=True)
                         except Exception:
                             st.image(img_path, width=1200)
