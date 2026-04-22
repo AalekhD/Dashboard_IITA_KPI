@@ -93,7 +93,8 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
     # Build HTML table
     html = '<table style="border-collapse: collapse; width: 100%; table-layout: fixed; font-family: Arial, sans-serif; background-color: white;">'
     # Default styles remain left-aligned; we'll override per-cell below
-    html += '<style>td, th { border: 1px solid #999; padding: 12px; text-align: left; background-color: white; white-space: normal; word-wrap: break-word; word-break: break-word; overflow-wrap: break-word; color: black; font-size: 9pt; }</style>'
+    # Use a soft black border for all table cells so sections are visually separated
+    html += '<style>td, th { border: 1px solid rgba(0,0,0,0.12); padding: 12px; text-align: left; background-color: white; white-space: normal; word-wrap: break-word; word-break: break-word; overflow-wrap: break-word; color: black; font-size: 9pt; }</style>'
     
     processed = set()
     
@@ -292,6 +293,15 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                 # Only center row 9 when rendering a Service Unit file
                 cell_align = 'center' if (row_idx == 1 or (is_service_unit_file and row_idx == 9)) else align
                 styles.append(f'text-align: {cell_align}')
+                # For Service Unit tables add a slightly thicker bottom separator
+                # for each data row (keeps header/band rows intact).
+                if is_service_unit_file:
+                    try:
+                        is_srv_header_row = suppress_row2_header and (row_idx == 9 or any(c.value is not None and 'service unit key performance' in str(c.value).lower() for c in row_data))
+                    except Exception:
+                        is_srv_header_row = False
+                    if not is_srv_header_row and row_idx != 1:
+                        styles.append('border-bottom: 2px solid rgba(0,0,0,0.25)')
                 # Add section separator for Program and Service Unit tables
                 # Do not add a top border before the Service Unit header row (row 9);
                 # we'll add the stronger border below that row instead.
@@ -320,18 +330,44 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                         # Target is in column target_col (1-based) → index target_col-1 in row_data (0-based)
                         tgt_idx = target_col - 1
                         target_cell_obj = row_data[tgt_idx] if len(row_data) > tgt_idx else None
-                        target_raw = target_cell_obj.value if target_cell_obj is not None else None
-                        # Detect percent formats on either cell and scale accordingly
-                        actual_fmt = getattr(cell_format, 'number_format', None)
+                        target_raw = None
                         target_fmt = None
+                        # Resolve merged-anchor for the target cell (scan merged ranges)
                         try:
                             if target_cell_obj is not None:
-                                target_fmt = getattr(ws_format[target_cell_obj.coordinate], 'number_format', None)
+                                t_row = getattr(target_cell_obj, 'row', None)
+                                t_col = getattr(target_cell_obj, 'column', None)
+                                anchor_coord = None
+                                try:
+                                    for mr in ws_format.merged_cells.ranges:
+                                        if t_row is not None and t_col is not None and mr.min_row <= t_row <= mr.max_row and mr.min_col <= t_col <= mr.max_col:
+                                            anchor_coord = f"{get_column_letter(mr.min_col)}{mr.min_row}"
+                                            break
+                                except Exception:
+                                    anchor_coord = None
+                                if anchor_coord is None:
+                                    anchor_coord = target_cell_obj.coordinate
+                                try:
+                                    target_raw = ws_data[anchor_coord].value
+                                except Exception:
+                                    target_raw = target_cell_obj.value
+                                try:
+                                    target_fmt = getattr(ws_format[anchor_coord], 'number_format', None)
+                                except Exception:
+                                    target_fmt = None
                         except Exception:
-                            target_fmt = None
-                        scale = 1
+                            target_raw = target_cell_obj.value if target_cell_obj is not None else None
+                            try:
+                                if target_cell_obj is not None:
+                                    target_fmt = getattr(ws_format[target_cell_obj.coordinate], 'number_format', None)
+                            except Exception:
+                                target_fmt = None
+                        # Detect percent formats on either cell and set scale
+                        actual_fmt = getattr(cell_format, 'number_format', None)
                         if (actual_fmt and '%' in str(actual_fmt)) or (target_fmt and '%' in str(target_fmt)):
                             scale = 100
+                        else:
+                            scale = 1
                         if actual_raw is not None and target_raw is not None:
                             a = float(actual_raw) * scale
                             t = float(target_raw) * scale
@@ -1326,14 +1362,14 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
 # Helper: render a dataframe as a gray-styled HTML table
 def render_gray_table(df):
     header_cells = "".join(
-        f'<th style="background-color:#6b7280;color:white;padding:8px 12px;border:1px solid #9ca3af;font-weight:bold;">{col}</th>'
+        f'<th style="background-color:#6b7280;color:white;padding:8px 12px;border:1px solid rgba(0,0,0,0.12);font-weight:bold;">{col}</th>'
         for col in df.columns
     )
     rows_html = ""
     for i, row in df.iterrows():
         bg = "#f3f4f6" if i % 2 == 0 else "#e5e7eb"
         cells = "".join(
-            f'<td style="background-color:{bg};padding:7px 12px;border:1px solid #d1d5db;">{val}</td>'
+            f'<td style="background-color:{bg};padding:7px 12px;border:1px solid rgba(0,0,0,0.12);">{val}</td>'
             for val in row
         )
         rows_html += f"<tr>{cells}</tr>"
@@ -1351,7 +1387,7 @@ def get_heatmap_legend_html():
     return (
         '<div style="display:flex; gap:12px; align-items:center; margin-top:0px; margin-bottom:2px; font-family: Arial, sans-serif;">'
         '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#D73027;display:inline-block;border-radius:3px;"></span><span>No Progress</span></div>'
-        '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#FFFF00;display:inline-block;border-radius:3px; border:1px solid #999;"></span><span>50 % Progress</span></div>'
+        '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#FFFF00;display:inline-block;border-radius:3px; border:1px solid rgba(0,0,0,0.12);"></span><span>50 % Progress</span></div>'
         '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#1A7A1A;display:inline-block;border-radius:3px;"></span><span>Target Achieved</span></div>'
         '</div>'
     )
@@ -1376,7 +1412,7 @@ with tab1:
         html_legend = (
             '<div style="display:flex; gap:12px; align-items:center; margin-top:0px; margin-bottom:2px; font-family: Arial, sans-serif;">'
             '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#D73027;display:inline-block;border-radius:3px;"></span><span>No Progress</span></div>'
-            '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#FFFF00;display:inline-block;border-radius:3px; border:1px solid #999;"></span><span>50 % Progress</span></div>'
+            '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#FFFF00;display:inline-block;border-radius:3px; border:1px solid rgba(0,0,0,0.12);"></span><span>50 % Progress</span></div>'
             '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#1A7A1A;display:inline-block;border-radius:3px;"></span><span>Target Achieved</span></div>'
             '</div>'
         )
@@ -1735,7 +1771,7 @@ with tab3:
         html_legend_srv = (
             '<div style="display:flex; gap:12px; align-items:center; margin-top:0px; margin-bottom:2px; font-family: Arial, sans-serif;">'
             '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#D73027;display:inline-block;border-radius:3px;"></span><span>No Progress</span></div>'
-            '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#FFFF00;display:inline-block;border-radius:3px; border:1px solid #999;"></span><span>50 % Progress</span></div>'
+            '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#FFFF00;display:inline-block;border-radius:3px; border:1px solid rgba(0,0,0,0.12);"></span><span>50 % Progress</span></div>'
             '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#1A7A1A;display:inline-block;border-radius:3px;"></span><span>Target Achieved</span></div>'
             '</div>'
         )
