@@ -230,11 +230,13 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
             
             # Determine if original cell was numeric so we can align numbers/columns
             is_numeric = isinstance(cell_data.value, (int, float))
-            # For Service Unit tables: left-align columns 1 and 2 (except header rows),
-            # center other columns. For other tables keep existing column rules.
+            # For Service Unit tables: left-align columns 1 and 2, right-align
+            # columns 3 and 4, center other columns. For other tables keep existing rules.
             if is_service_unit_file:
                 if col_idx in (1, 2):
                     align = 'left'
+                elif col_idx in (3, 4):
+                    align = 'right'
                 else:
                     align = 'center'
             elif is_program_file:
@@ -2001,7 +2003,7 @@ with tab3:
                     new_html = new_html.replace(orig, new, 1)
             return new_html
 
-        html_services = adjust_service_alignment(html_services)
+        # skip post-processing alignment adjustments to preserve generator's per-column alignment
         st.markdown(html_legend_srv + html_services, unsafe_allow_html=True)
     except Exception as e:
         st.warning(f"Could not render with merged cells: {str(e)}")
