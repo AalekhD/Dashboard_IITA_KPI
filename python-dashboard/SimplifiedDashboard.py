@@ -64,7 +64,7 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                 if cell is not None:
                     max_col = max(max_col, col_idx)
     
-    # Get merged cell ranges from format workbook
+    # Get merged cell ranges from format workbook (normalize to 'A1' coords)
     merged_cells = {}
     for merged_range in ws_format.merged_cells.ranges:
         cells = list(merged_range.cells)
@@ -267,16 +267,26 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                 # For Service Unit files, use a light grey header; for Program files also use light grey
                 # but left-align the first two header cells; for other suppressed files use white; otherwise green
                 if is_service_unit_file:
-                    # set first and second column widths for service unit tables (col1 narrower, col2 wider)
+                    # set first and second column widths for service unit tables (col1 a bit narrower, col2 a bit wider)
                     if col_idx == 1:
-                        width_style = ' width: 22%;'
+                        width_style = ' width: 18%;'
+                    elif col_idx == 2:
+                        width_style = ' width: 26%;'
                     else:
                         width_style = ''
                     # add a stronger bottom border for the top header row in Service Unit tables
                     html += f'<th style="background-color: #e0e0e0; color: black; font-weight: bold; text-align: center; font-size: 11pt; font-family: Arial, sans-serif;{width_style} border-bottom: 3px solid #000;" rowspan="{rowspan}" colspan="{colspan}">{header_display}</th>'
                 elif is_program_file:
                     # Program Output: use light-gray header and left-align first two columns
-                    width_style = ''
+                    # make columns 1 & 2 slightly thinner and column 3 wider
+                    if col_idx == 1:
+                        width_style = ' width: 16%;'
+                    elif col_idx == 2:
+                        width_style = ' width: 8%;'
+                    elif col_idx == 3:
+                        width_style = ' width: 30%;'
+                    else:
+                        width_style = ''
                     text_align = 'left' if col_idx in (1, 2) else 'center'
                     html += f'<th style="background-color: #e0e0e0; color: black; font-weight: bold; text-align: {text_align}; font-size: 11pt; font-family: Arial, sans-serif;{width_style} border-bottom: 3px solid #000;" rowspan="{rowspan}" colspan="{colspan}">{header_display}</th>'
                 elif suppress_header_color:
@@ -426,11 +436,21 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                 # First column cells (row headers) should have slightly larger font
                 if col_idx == 1:
                     styles.append('font-size: 11pt')
-                    # For Service Unit tables, reduce the first column width slightly
+                    # For Service Unit and Program Output tables, set appropriate widths
                     if is_service_unit_file:
-                        styles.append('width: 22%')
-                # For Service Unit tables, do not set an explicit width on column 2
-                # so it matches the Program Output table behavior.
+                        styles.append('width: 18%')
+                    elif is_program_file:
+                        styles.append('width: 14%')
+                elif col_idx == 2:
+                    # Make column 2 slightly wider for Program Output and Service Unit tables
+                    if is_service_unit_file:
+                        styles.append('width: 26%')
+                    elif is_program_file:
+                        styles.append('width: 20%')
+                elif col_idx == 3:
+                    # Make column 3 wider for Program Output tables
+                    if is_program_file:
+                        styles.append('width: 28%')
                 if bg_color:
                     styles.append(f'background-color: {bg_color}')
                 # We will force data text color to black for consistency (append below)
@@ -1857,6 +1877,7 @@ with tab3:
                     last_end_local = 0
                     tags_local = list(cell_pattern_local.finditer(new_r))
                     if tags_local:
+                        col_pos_local = 1
                         for m2 in tags_local:
                             s2, e2 = m2.span(1)
                             open_tag = m2.group(1)
@@ -1865,6 +1886,8 @@ with tab3:
                             # determine colspan
                             cs2 = re.search(r'colspan\s*=\s*"(\d+)"', open_tag, flags=re.IGNORECASE)
                             span2 = int(cs2.group(1)) if cs2 else 1
+                            tag_start2 = col_pos_local
+                            tag_end2 = col_pos_local + span2 - 1
 
                             inner_text = re.sub(r'<[^>]+>', '', inner or '').strip()
                             cleaned = inner_text.replace('\u00A0', '').replace('\xa0', '').replace(',', '').strip()
@@ -1882,17 +1905,22 @@ with tab3:
                             except Exception:
                                 is_numeric_local = False
 
-                            # choose alignment
-                            if is_numeric_local:
-                                new_open = update_tag_alignment(open_tag, 'right')
+                            # If this tag overlaps columns 4-9, preserve center alignment
+                            if tag_end2 >= 4 and tag_start2 <= 9:
+                                new_open = update_tag_alignment(open_tag, 'center')
                             else:
-                                new_open = update_tag_alignment(open_tag, 'left')
+                                # choose alignment
+                                if is_numeric_local:
+                                    new_open = update_tag_alignment(open_tag, 'right')
+                                else:
+                                    new_open = update_tag_alignment(open_tag, 'left')
 
                             parts_local.append(new_r[last_end_local:s2])
                             parts_local.append(new_open)
                             parts_local.append(inner)
                             parts_local.append(close_tag)
                             last_end_local = e2 + len(m2.group(2)) + len(m2.group(3))
+                            col_pos_local += span2
                         parts_local.append(new_r[last_end_local:])
                         new_r = ''.join(parts_local)
 
@@ -1941,14 +1969,19 @@ with tab3:
                         new_open = open_tag
                         # Priority: if cell starts within last-two logical cols -> right ONLY if numeric
                         # Else if numeric and this row isn't in first-two -> right
-                        if tag_start >= min_last:
-                            if is_numeric:
+                        # Preserve center alignment for any tags that overlap columns 4-9
+                        if tag_end >= 4 and tag_start <= 9:
+                            # force center for these columns
+                            new_open = update_tag_alignment(new_open, 'center')
+                        else:
+                            if tag_start >= min_last:
+                                if is_numeric:
+                                    new_open = update_tag_alignment(new_open, 'right')
+                                else:
+                                    # leave alignment as-is (preserve earlier centering for non-numeric)
+                                    pass
+                            elif is_numeric and i >= 2:
                                 new_open = update_tag_alignment(new_open, 'right')
-                            else:
-                                # leave alignment as-is (preserve earlier centering for non-numeric)
-                                pass
-                        elif is_numeric and i >= 2:
-                            new_open = update_tag_alignment(new_open, 'right')
 
                         parts.append(new_r[last_end:s])
                         parts.append(new_open)
