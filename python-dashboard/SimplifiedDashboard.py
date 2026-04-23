@@ -271,7 +271,7 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                 if is_service_unit_file:
                     # set first and second column widths for service unit tables (col1 a bit narrower, col2 a bit wider)
                     if col_idx == 1:
-                        width_style = ' width: 18%;'
+                        width_style = ' width: 32%;'
                     elif col_idx == 2:
                         width_style = ' width: 26%;'
                     else:
@@ -440,7 +440,7 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                     styles.append('font-size: 11pt')
                     # For Service Unit and Program Output tables, set appropriate widths
                     if is_service_unit_file:
-                        styles.append('width: 18%')
+                        styles.append('width: 24%')
                     elif is_program_file:
                         styles.append('width: 14%')
                 elif col_idx == 2:
