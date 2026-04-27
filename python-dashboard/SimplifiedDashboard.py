@@ -1423,11 +1423,11 @@ def get_heatmap_legend_html():
 df_programs, df_services, df_heatmap = load_kpi_data()
 
 # Tabs
-tab1, tab2, tab3 = st.tabs(["📊 2025 Program Output KPIs (Aggregate)", "🌡️ 2025 Program Output KPI (by Program)", "🏢 2025 Service Unit KPIs"])
+tab1, tab2, tab3 = st.tabs(["📊Program Output KPIs (Aggregate)", "🌡️ Program Output KPI (by Program)", "🏢 Service Unit KPIs"])
 
 # Programs Tab
 with tab1:
-    st.markdown('<h2 style="font-family: Arial, sans-serif; font-size:20px; margin:6px 0;">📊 2025 Program Output KPIs (Aggregate)</h2>', unsafe_allow_html=True)
+    st.markdown('<h2 style="font-family: Arial, sans-serif; font-size:20px; margin:6px 0;">📊 Program Output KPIs (Aggregate)</h2>', unsafe_allow_html=True)
     
     root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     program_file = os.path.join(root_dir, 'data', 'Program Output KPIs.xlsx')
@@ -1786,7 +1786,7 @@ with tab2:
 
 # Service Units Tab (now third)
 with tab3:
-    st.markdown('<h2 style="font-family: Arial, sans-serif; font-size:20px; margin:6px 0;">🏢 2025 Service Unit KPIs</h2>', unsafe_allow_html=True)
+    st.markdown('<h2 style="font-family: Arial, sans-serif; font-size:20px; margin:6px 0;">🏢 Service Unit KPIs</h2>', unsafe_allow_html=True)
     
     root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     service_file = os.path.join(root_dir, 'data', 'Service Unit KPIs.xlsx')
