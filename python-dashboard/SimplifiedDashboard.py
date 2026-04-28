@@ -241,8 +241,11 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                     align = 'center'
             elif is_program_file:
                 # For Program Output files ensure first two columns are left-aligned
+                # Force column 4 to be right-aligned and keep numeric cells right-aligned
                 if col_idx in (1, 2):
                     align = 'left'
+                elif col_idx == 4:
+                    align = 'right'
                 elif is_numeric:
                     align = 'right'
                 else:
@@ -280,13 +283,13 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                     html += f'<th style="background-color: #e0e0e0; color: black; font-weight: bold; text-align: center; font-size: 11pt; font-family: Arial, sans-serif;{width_style} border-bottom: 3px solid #000;" rowspan="{rowspan}" colspan="{colspan}">{header_display}</th>'
                 elif is_program_file:
                     # Program Output: use light-gray header and left-align first two columns
-                    # make columns 1 & 2 slightly thinner and column 3 wider
+                    # increase width of column 2 a bit for readability
                     if col_idx == 1:
-                        width_style = ' width: 16%;'
+                        width_style = ' width: 14%;'
                     elif col_idx == 2:
-                        width_style = ' width: 8%;'
+                        width_style = ' width: 15%;'
                     elif col_idx == 3:
-                        width_style = ' width: 30%;'
+                        width_style = ' width: 28%;'
                     else:
                         width_style = ''
                     text_align = 'left' if col_idx in (1, 2) else 'center'
@@ -448,7 +451,7 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                     if is_service_unit_file:
                         styles.append('width: 26%')
                     elif is_program_file:
-                        styles.append('width: 20%')
+                        styles.append('width: 24%')
                 elif col_idx == 3:
                     # Make column 3 wider for Program Output tables
                     if is_program_file:
@@ -1427,51 +1430,100 @@ tab1, tab2, tab3 = st.tabs(["📊Program Output KPIs (Aggregate)", "🌡️ Prog
 
 # Programs Tab
 with tab1:
-    st.markdown('<h2 style="font-family: Arial, sans-serif; font-size:20px; margin:6px 0;">📊 Program Output KPIs (Aggregate)</h2>', unsafe_allow_html=True)
-    
+    st.markdown('<h2 style="font-family: Arial, sans-serif; font-size:20px; margin:6px 0;">📊 Program Output KPIs</h2>', unsafe_allow_html=True)
+
+    # Create three subtabs as requested: Number, FTE, Million (USD)
+    prog_sub_1, prog_sub_2, prog_sub_3 = st.tabs(["Program KPI by Number", "Program KPI by Full Time Equivalent (FTE)", "Program KPI by Million (USD)"])
+
     root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     program_file = os.path.join(root_dir, 'data', 'Program Output KPIs.xlsx')
 
-    try:
-        # Program Output KPIs: display using Excel cell formats (preserve per-cell decimals)
-        html_programs = excel_to_html_with_merged_cells(program_file, no_decimals=False)
-        # Legend (red = No Progress, yellow = near target, green = at/above target)
-        html_legend = (
+    # --- Program KPI by Number: move previous aggregate table here ---
+    with prog_sub_1:
+        st.markdown('<h3 style="font-family: Arial, sans-serif; font-size:16px; margin:4px 0;">Program KPI by Number</h3>', unsafe_allow_html=True)
+        try:
+            html_programs = excel_to_html_with_merged_cells(program_file, no_decimals=False)
+            html_legend = (
+                '<div style="display:flex; gap:12px; align-items:center; margin-top:0px; margin-bottom:2px; font-family: Arial, sans-serif;">'
+                '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#D73027;display:inline-block;border-radius:3px;"></span><span>No Progress</span></div>'
+                '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#FFFF00;display:inline-block;border-radius:3px; border:1px solid rgba(0,0,0,0.12);"></span><span>50 % Progress</span></div>'
+                '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#1A7A1A;display:inline-block;border-radius:3px;"></span><span>Target Achieved</span></div>'
+                '</div>'
+            )
+            st.markdown(html_legend + html_programs, unsafe_allow_html=True)
+        except Exception as e:
+            st.warning(f"Could not render with merged cells: {str(e)}")
+            display_df = df_programs.copy()
+            for col in display_df.select_dtypes(include=["number"]).columns:
+                def fmt_cell(x):
+                    if pd.isna(x):
+                        return ""
+                    try:
+                        if isinstance(x, (int, float)) and 0 <= x <= 1:
+                            s = f"{x * 100:.2f}".rstrip('0').rstrip('.')
+                            return s + '%'
+                        else:
+                            return str(int(round(x)))
+                    except Exception:
+                        return str(x)
+                display_df[col] = display_df[col].apply(fmt_cell)
+            st.dataframe(display_df, width='stretch', height=600)
+
+        # Download button (keeps same CSV as before)
+        csv_programs = df_programs.to_csv(index=False)
+        st.download_button(
+            label="⬇️ Download 2025 Program KPIs as CSV",
+            data=csv_programs,
+            file_name="2025_Program_Output_KPIs.csv",
+            mime="text/csv"
+        )
+
+    # --- Program KPI by FTE: render FTE-specific Excel if present ---
+    with prog_sub_2:
+        st.markdown('<h3 style="font-family: Arial, sans-serif; font-size:16px; margin:4px 0;">Program KPI by Full Time Equivalent (FTE)</h3>', unsafe_allow_html=True)
+        # attempt to load an FTE-specific Excel file named 'Program Output KPIs by $.xlsx'
+        fte_file = os.path.join(root_dir, 'data', 'Program Output KPIs by $.xlsx')
+        # reuse legend HTML
+        html_legend_fte = (
             '<div style="display:flex; gap:12px; align-items:center; margin-top:0px; margin-bottom:2px; font-family: Arial, sans-serif;">'
             '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#D73027;display:inline-block;border-radius:3px;"></span><span>No Progress</span></div>'
             '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#FFFF00;display:inline-block;border-radius:3px; border:1px solid rgba(0,0,0,0.12);"></span><span>50 % Progress</span></div>'
             '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#1A7A1A;display:inline-block;border-radius:3px;"></span><span>Target Achieved</span></div>'
             '</div>'
         )
-        st.markdown(html_legend + html_programs, unsafe_allow_html=True)
-    except Exception as e:
-        st.warning(f"Could not render with merged cells: {str(e)}")
-        # Fallback: format numeric columns to have no decimals and convert to strings
-        display_df = df_programs.copy()
-        for col in display_df.select_dtypes(include=["number"]).columns:
-            def fmt_cell(x):
-                if pd.isna(x):
-                    return ""
+        try:
+            if os.path.exists(fte_file):
+                html_programs_fte = excel_to_html_with_merged_cells(fte_file, no_decimals=False)
+                st.markdown(html_legend_fte + html_programs_fte, unsafe_allow_html=True)
+                # Download
                 try:
-                    # Heuristic: treat values between 0 and 1 as percentages
-                    if isinstance(x, (int, float)) and 0 <= x <= 1:
-                        s = f"{x * 100:.2f}".rstrip('0').rstrip('.')
-                        return s + '%'
-                    else:
-                        return str(int(round(x)))
+                    df_fte = pd.read_excel(fte_file)
+                    csv_fte = df_fte.to_csv(index=False)
+                    st.download_button(
+                        label="⬇️ Download 2025 Program KPIs (FTE) as CSV",
+                        data=csv_fte,
+                        file_name="2025_Program_Output_KPIs_FTE.csv",
+                        mime="text/csv"
+                    )
                 except Exception:
-                    return str(x)
-            display_df[col] = display_df[col].apply(fmt_cell)
-        st.dataframe(display_df, width='stretch', height=600)
-    
-    # Download button
-    csv_programs = df_programs.to_csv(index=False)
-    st.download_button(
-        label="⬇️ Download 2025 Program KPIs as CSV",
-        data=csv_programs,
-        file_name="2025_Program_Output_KPIs.csv",
-        mime="text/csv"
-    )
+                    pass
+            else:
+                st.info('📁 Waiting for: Program Output KPIs by $.xlsx')
+        except Exception as e:
+            st.warning(f"Could not render FTE sheet: {str(e)}")
+            try:
+                df_fte = pd.read_excel(fte_file)
+                display_df_fte = df_fte.copy()
+                for col in display_df_fte.select_dtypes(include=["number"]).columns:
+                    display_df_fte[col] = display_df_fte[col].apply(lambda x: "" if pd.isna(x) else str(int(round(x))))
+                st.dataframe(display_df_fte, width='stretch', height=600)
+            except Exception:
+                st.info('No FTE-specific sheet found or it could not be read.')
+
+    # --- Program KPI by Million (USD): placeholder / future content ---
+    with prog_sub_3:
+        st.markdown('<h3 style="font-family: Arial, sans-serif; font-size:16px; margin:4px 0;">Program KPI by Million (USD)</h3>', unsafe_allow_html=True)
+        st.info('No separate Million (USD) view found. If you have a USD-specific sheet or image, place it in the data folder and I can render it here.')
 
 # KPI By Program Tab (now second)
 with tab2:
