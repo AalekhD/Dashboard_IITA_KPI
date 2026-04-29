@@ -485,6 +485,84 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
     html += '</table>'
     return html
 
+
+# Render helpers for Program KPI subtabs — keep logic separate per-tab for future customizations
+def render_program_kpi_number(excel_path, df=None):
+    st.markdown('<h3 style="font-family: Arial, sans-serif; font-size:16px; margin:4px 0;">Program KPI by Number</h3>', unsafe_allow_html=True)
+    try:
+        html_programs = excel_to_html_with_merged_cells(excel_path, no_decimals=False)
+        st.markdown(get_heatmap_legend_html() + html_programs, unsafe_allow_html=True)
+    except Exception as e:
+        st.warning(f"Could not render with merged cells: {str(e)}")
+        if df is not None:
+            display_df = df.copy()
+            for col in display_df.select_dtypes(include=["number"]).columns:
+                def fmt_cell(x):
+                    if pd.isna(x):
+                        return ""
+                    try:
+                        if isinstance(x, (int, float)) and 0 <= x <= 1:
+                            s = f"{x * 100:.2f}".rstrip('0').rstrip('.')
+                            return s + '%'
+                        else:
+                            return str(int(round(x)))
+                    except Exception:
+                        return str(x)
+                display_df[col] = display_df[col].apply(fmt_cell)
+            st.dataframe(display_df, width='stretch', height=600)
+
+
+def render_program_kpi_fte(excel_path):
+    st.markdown('<h3 style="font-family: Arial, sans-serif; font-size:16px; margin:4px 0;">Program KPI by Full Time Equivalent (FTE)</h3>', unsafe_allow_html=True)
+    legend = get_heatmap_legend_html()
+    try:
+        if os.path.exists(excel_path):
+            html = excel_to_html_with_merged_cells(excel_path, no_decimals=False)
+            st.markdown(legend + html, unsafe_allow_html=True)
+            try:
+                df = pd.read_excel(excel_path)
+                st.download_button(label="⬇️ Download 2025 Program KPIs (FTE) as CSV", data=df.to_csv(index=False), file_name="2025_Program_Output_KPIs_FTE.csv", mime="text/csv")
+            except Exception:
+                pass
+        else:
+            st.info('📁 Waiting for: Program Output KPIs by FTE.xlsx')
+    except Exception as e:
+        st.warning(f"Could not render FTE sheet: {str(e)}")
+        try:
+            df = pd.read_excel(excel_path)
+            display_df = df.copy()
+            for col in display_df.select_dtypes(include=["number"]).columns:
+                display_df[col] = display_df[col].apply(lambda x: "" if pd.isna(x) else str(int(round(x))))
+            st.dataframe(display_df, width='stretch', height=600)
+        except Exception:
+            st.info('No FTE-specific sheet found or it could not be read.')
+
+
+def render_program_kpi_usd(excel_path):
+    st.markdown('<h3 style="font-family: Arial, sans-serif; font-size:16px; margin:4px 0;">Program KPI by Million (USD)</h3>', unsafe_allow_html=True)
+    legend = get_heatmap_legend_html()
+    try:
+        if os.path.exists(excel_path):
+            html = excel_to_html_with_merged_cells(excel_path, no_decimals=False)
+            st.markdown(legend + html, unsafe_allow_html=True)
+            try:
+                df = pd.read_excel(excel_path)
+                st.download_button(label="⬇️ Download 2025 Program KPIs (USD) as CSV", data=df.to_csv(index=False), file_name="2025_Program_Output_KPIs_USD.csv", mime="text/csv")
+            except Exception:
+                pass
+        else:
+            st.info('📁 Waiting for: Program Output KPIs by $.xlsx')
+    except Exception as e:
+        st.warning(f"Could not render USD sheet: {str(e)}")
+        try:
+            df = pd.read_excel(excel_path)
+            display_df = df.copy()
+            for col in display_df.select_dtypes(include=["number"]).columns:
+                display_df[col] = display_df[col].apply(lambda x: "" if pd.isna(x) else str(int(round(x))))
+            st.dataframe(display_df, width='stretch', height=600)
+        except Exception:
+            st.info('No USD-specific sheet found or it could not be read.')
+
 # Function to create heatmap from KPI heat map file
 # Returns (fig, df_below) where df_below contains rows beyond row 16 (or None)
 def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
@@ -1440,90 +1518,18 @@ with tab1:
 
     # --- Program KPI by Number: move previous aggregate table here ---
     with prog_sub_1:
-        st.markdown('<h3 style="font-family: Arial, sans-serif; font-size:16px; margin:4px 0;">Program KPI by Number</h3>', unsafe_allow_html=True)
-        try:
-            html_programs = excel_to_html_with_merged_cells(program_file, no_decimals=False)
-            html_legend = (
-                '<div style="display:flex; gap:12px; align-items:center; margin-top:0px; margin-bottom:2px; font-family: Arial, sans-serif;">'
-                '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#D73027;display:inline-block;border-radius:3px;"></span><span>No Progress</span></div>'
-                '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#FFFF00;display:inline-block;border-radius:3px; border:1px solid rgba(0,0,0,0.12);"></span><span>50 % Progress</span></div>'
-                '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#1A7A1A;display:inline-block;border-radius:3px;"></span><span>Target Achieved</span></div>'
-                '</div>'
-            )
-            st.markdown(html_legend + html_programs, unsafe_allow_html=True)
-        except Exception as e:
-            st.warning(f"Could not render with merged cells: {str(e)}")
-            display_df = df_programs.copy()
-            for col in display_df.select_dtypes(include=["number"]).columns:
-                def fmt_cell(x):
-                    if pd.isna(x):
-                        return ""
-                    try:
-                        if isinstance(x, (int, float)) and 0 <= x <= 1:
-                            s = f"{x * 100:.2f}".rstrip('0').rstrip('.')
-                            return s + '%'
-                        else:
-                            return str(int(round(x)))
-                    except Exception:
-                        return str(x)
-                display_df[col] = display_df[col].apply(fmt_cell)
-            st.dataframe(display_df, width='stretch', height=600)
-
-        # Download button (keeps same CSV as before)
-        csv_programs = df_programs.to_csv(index=False)
-        st.download_button(
-            label="⬇️ Download 2025 Program KPIs as CSV",
-            data=csv_programs,
-            file_name="2025_Program_Output_KPIs.csv",
-            mime="text/csv"
-        )
+        # Use the dedicated render function so we can easily customize later
+        render_program_kpi_number(program_file, df=df_programs)
 
     # --- Program KPI by FTE: render FTE-specific Excel if present ---
     with prog_sub_2:
-        st.markdown('<h3 style="font-family: Arial, sans-serif; font-size:16px; margin:4px 0;">Program KPI by Full Time Equivalent (FTE)</h3>', unsafe_allow_html=True)
-        # attempt to load an FTE-specific Excel file named 'Program Output KPIs by $.xlsx'
-        fte_file = os.path.join(root_dir, 'data', 'Program Output KPIs by $.xlsx')
-        # reuse legend HTML
-        html_legend_fte = (
-            '<div style="display:flex; gap:12px; align-items:center; margin-top:0px; margin-bottom:2px; font-family: Arial, sans-serif;">'
-            '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#D73027;display:inline-block;border-radius:3px;"></span><span>No Progress</span></div>'
-            '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#FFFF00;display:inline-block;border-radius:3px; border:1px solid rgba(0,0,0,0.12);"></span><span>50 % Progress</span></div>'
-            '<div style="display:flex; align-items:center; gap:6px;"><span style="width:16px;height:16px;background:#1A7A1A;display:inline-block;border-radius:3px;"></span><span>Target Achieved</span></div>'
-            '</div>'
-        )
-        try:
-            if os.path.exists(fte_file):
-                html_programs_fte = excel_to_html_with_merged_cells(fte_file, no_decimals=False)
-                st.markdown(html_legend_fte + html_programs_fte, unsafe_allow_html=True)
-                # Download
-                try:
-                    df_fte = pd.read_excel(fte_file)
-                    csv_fte = df_fte.to_csv(index=False)
-                    st.download_button(
-                        label="⬇️ Download 2025 Program KPIs (FTE) as CSV",
-                        data=csv_fte,
-                        file_name="2025_Program_Output_KPIs_FTE.csv",
-                        mime="text/csv"
-                    )
-                except Exception:
-                    pass
-            else:
-                st.info('📁 Waiting for: Program Output KPIs by $.xlsx')
-        except Exception as e:
-            st.warning(f"Could not render FTE sheet: {str(e)}")
-            try:
-                df_fte = pd.read_excel(fte_file)
-                display_df_fte = df_fte.copy()
-                for col in display_df_fte.select_dtypes(include=["number"]).columns:
-                    display_df_fte[col] = display_df_fte[col].apply(lambda x: "" if pd.isna(x) else str(int(round(x))))
-                st.dataframe(display_df_fte, width='stretch', height=600)
-            except Exception:
-                st.info('No FTE-specific sheet found or it could not be read.')
+        fte_file = os.path.join(root_dir, 'data', 'Program Output KPIs by FTE.xlsx')
+        render_program_kpi_fte(fte_file)
 
-    # --- Program KPI by Million (USD): placeholder / future content ---
+    # --- Program KPI by Million (USD): render USD-specific Excel if present ---
     with prog_sub_3:
-        st.markdown('<h3 style="font-family: Arial, sans-serif; font-size:16px; margin:4px 0;">Program KPI by Million (USD)</h3>', unsafe_allow_html=True)
-        st.info('No separate Million (USD) view found. If you have a USD-specific sheet or image, place it in the data folder and I can render it here.')
+        usd_file = os.path.join(root_dir, 'data', 'Program Output KPIs by $.xlsx')
+        render_program_kpi_usd(usd_file)
 
 # KPI By Program Tab (now second)
 with tab2:
