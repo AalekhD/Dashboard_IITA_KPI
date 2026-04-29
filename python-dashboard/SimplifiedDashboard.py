@@ -238,8 +238,8 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
             else:
                 cell_value = ""
 
-            # Override to 1 decimal place for specified columns
-            if single_decimal_col_indices and col_idx in single_decimal_col_indices:
+            # Override to 1 decimal place for specified columns (skip header row 1)
+            if single_decimal_col_indices and col_idx in single_decimal_col_indices and row_idx != 1:
                 if isinstance(cell_data.value, (int, float)):
                     try:
                         cell_value = f"{cell_data.value:.1f}"
