@@ -42,7 +42,7 @@ def load_kpi_data():
     return df_programs, df_services, df_heatmap
 
 # Function to convert Excel with merged cells to HTML
-def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highlight_row_keyword=None, target_col=4, actual_col=5, only_color_if_target=False, skip_col_indices=None, single_decimal_col_indices=None):
+def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highlight_row_keyword=None, target_col=4, actual_col=5, only_color_if_target=False, skip_col_indices=None, single_decimal_col_indices=None, alt_color_scheme=False, yellow_green_rows=None):
     # Load workbook with data_only=True to get calculated values instead of formulas
     wb_data = openpyxl.load_workbook(excel_file_path, data_only=True)
     ws_data = wb_data.active
@@ -259,10 +259,10 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                     align = 'center'
             elif is_program_file:
                 # For Program Output files ensure first two columns are left-aligned
-                # Force column 4 to be right-aligned and keep numeric cells right-aligned
+                # Force column 4 to be right-aligned, column 5 always right, and keep numeric cells right-aligned
                 if col_idx in (1, 2):
                     align = 'left'
-                elif col_idx == 4:
+                elif col_idx in (4, 5):
                     align = 'right'
                 elif is_numeric:
                     align = 'right'
@@ -419,31 +419,85 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                             def lerp(c1, c2, f):
                                 return tuple(c1[i] + (c2[i] - c1[i]) * f for i in range(3))
 
-                            red = hex_to_rgb('#D73027')
-                            yellow = hex_to_rgb('#FFFF00')
-                            green = hex_to_rgb('#1A7A1A')
+                            if yellow_green_rows and row_idx in yellow_green_rows:
+                                # Special: Yellow(0) -> Orange(target*0.75) -> Green(>=target)
+                                yellow_c = hex_to_rgb('#FFFF00')
+                                orange_c = hex_to_rgb('#FFA500')
+                                green_c  = hex_to_rgb('#1A7A1A')
+                                if t is None or t == 0:
+                                    bg_color = '#1A7A1A'; text_color = 'white'
+                                else:
+                                    orange_pt = t * 0.75
+                                    if a >= t:
+                                        bg_color = '#1A7A1A'; text_color = 'white'
+                                    elif a <= 0:
+                                        bg_color = '#FFFF00'; text_color = 'black'
+                                    elif a < orange_pt:
+                                        # Yellow -> Orange
+                                        f = a / orange_pt if orange_pt > 0 else 0
+                                        rgb = lerp(yellow_c, orange_c, f)
+                                        bg_color = rgb_to_hex(*rgb)
+                                        text_color = 'black'
+                                    else:
+                                        # Orange -> Green
+                                        f = (a - orange_pt) / (t - orange_pt) if (t - orange_pt) > 0 else 1
+                                        rgb = lerp(orange_c, green_c, f)
+                                        bg_color = rgb_to_hex(*rgb)
+                                        text_color = 'black' if f < 0.7 else 'white'
+                            elif alt_color_scheme:
+                                # Red(0) -> Yellow(target/2) -> Green(>=target)
+                                red_c    = hex_to_rgb('#D73027')
+                                yellow_c = hex_to_rgb('#FFFF00')
+                                green_c  = hex_to_rgb('#1A7A1A')
+                                half = t / 2.0 if (t is not None and t != 0) else None
 
-                            if t is None or t == 0:
-                                # No meaningful target: 0 -> red, >0 -> green
-                                if a == 0:
-                                    bg_color = '#D73027'; text_color = 'white'
+                                if t is None or t == 0:
+                                    if a <= 0:
+                                        bg_color = '#D73027'; text_color = 'white'
+                                    else:
+                                        bg_color = '#1A7A1A'; text_color = 'white'
                                 else:
-                                    bg_color = '#1A7A1A'; text_color = 'white'
+                                    if a <= 0:
+                                        bg_color = '#D73027'; text_color = 'white'
+                                    elif a >= t:
+                                        bg_color = '#1A7A1A'; text_color = 'white'
+                                    elif a < half:
+                                        # Red -> Yellow
+                                        f = a / half if half > 0 else 0
+                                        rgb = lerp(red_c, yellow_c, f)
+                                        bg_color = rgb_to_hex(*rgb)
+                                        text_color = 'black'
+                                    else:
+                                        # Yellow -> Green
+                                        f = (a - half) / (t - half) if (t - half) > 0 else 1
+                                        rgb = lerp(yellow_c, green_c, f)
+                                        bg_color = rgb_to_hex(*rgb)
+                                        text_color = 'black' if f < 0.6 else 'white'
                             else:
-                                if a <= 0:
-                                    bg_color = '#D73027'; text_color = 'white'
-                                elif a < mid:
-                                    f = (a) / (mid) if mid > 0 else 0
-                                    rgb = lerp(red, yellow, f)
-                                    bg_color = rgb_to_hex(*rgb)
-                                    text_color = 'black'
-                                elif a < t:
-                                    f = (a - mid) / (t - mid) if (t - mid) > 0 else 0
-                                    rgb = lerp(yellow, green, f)
-                                    bg_color = rgb_to_hex(*rgb)
-                                    text_color = 'black'
+                                low   = hex_to_rgb('#D73027')  # red
+                                mid_c = hex_to_rgb('#FFFF00')  # yellow
+                                high  = hex_to_rgb('#1A7A1A')  # dark green
+
+                                if t is None or t == 0:
+                                    if a == 0:
+                                        bg_color = '#D73027'; text_color = 'white'
+                                    else:
+                                        bg_color = '#1A7A1A'; text_color = 'white'
                                 else:
-                                    bg_color = '#1A7A1A'; text_color = 'white'
+                                    if a <= 0:
+                                        bg_color = '#D73027'; text_color = 'white'
+                                    elif a < mid:
+                                        f = (a) / (mid) if mid > 0 else 0
+                                        rgb = lerp(low, mid_c, f)
+                                        bg_color = rgb_to_hex(*rgb)
+                                        text_color = 'black'
+                                    elif a < t:
+                                        f = (a - mid) / (t - mid) if (t - mid) > 0 else 0
+                                        rgb = lerp(mid_c, high, f)
+                                        bg_color = rgb_to_hex(*rgb)
+                                        text_color = 'black'
+                                    else:
+                                        bg_color = '#1A7A1A'; text_color = 'white'
                         else:
                             # Fallback: if target missing, only color if flag allows it
                             if not only_color_if_target and actual_raw is not None:
@@ -542,7 +596,7 @@ def render_program_kpi_fte_with_color_coding(excel_path):
             html = excel_to_html_with_merged_cells(
                 excel_path, no_decimals=False, target_col=4, actual_col=5,
                 only_color_if_target=True, skip_col_indices=[4],
-                single_decimal_col_indices=[5]
+                single_decimal_col_indices=[5], alt_color_scheme=True
             )
             st.markdown(legend + html, unsafe_allow_html=True)
             try:
@@ -576,7 +630,8 @@ def render_program_kpi_usd(excel_path):
                 excel_path, no_decimals=False,
                 target_col=4, actual_col=5,
                 only_color_if_target=True,
-                skip_col_indices=[4], single_decimal_col_indices=[5]
+                skip_col_indices=[4], single_decimal_col_indices=[5],
+                alt_color_scheme=True, yellow_green_rows={21}
             )
             st.markdown(legend + html, unsafe_allow_html=True)
             try:
