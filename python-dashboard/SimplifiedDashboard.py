@@ -42,7 +42,7 @@ def load_kpi_data():
     return df_programs, df_services, df_heatmap
 
 # Function to convert Excel with merged cells to HTML
-def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highlight_row_keyword=None, target_col=4, actual_col=5):
+def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highlight_row_keyword=None, target_col=4, actual_col=5, only_color_if_target=False, skip_col_indices=None, single_decimal_col_indices=None):
     # Load workbook with data_only=True to get calculated values instead of formulas
     wb_data = openpyxl.load_workbook(excel_file_path, data_only=True)
     ws_data = wb_data.active
@@ -161,7 +161,11 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
             # Skip if already processed
             if cell_coord in processed:
                 continue
-            
+
+            # Skip columns that should not be displayed
+            if skip_col_indices and col_idx in skip_col_indices:
+                continue
+
             # Calculate rowspan and colspan for merged cells
             rowspan = 1
             colspan = 1
@@ -169,7 +173,13 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
             for merged_range in ws_format.merged_cells.ranges:
                 if cell_coord in merged_range:
                     rowspan = merged_range.max_row - merged_range.min_row + 1
-                    colspan = merged_range.max_col - merged_range.min_col + 1
+                    raw_colspan = merged_range.max_col - merged_range.min_col + 1
+                    # Subtract any skipped columns within this merged range
+                    if skip_col_indices:
+                        skipped_in_range = sum(1 for c in range(merged_range.min_col, merged_range.max_col + 1) if c in skip_col_indices)
+                        colspan = max(1, raw_colspan - skipped_in_range)
+                    else:
+                        colspan = raw_colspan
                     # Mark all cells in this range as processed
                     for r in range(merged_range.min_row, merged_range.max_row + 1):
                         for c in range(merged_range.min_col, merged_range.max_col + 1):
@@ -227,7 +237,15 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                     cell_value = str(cell_value)
             else:
                 cell_value = ""
-            
+
+            # Override to 1 decimal place for specified columns
+            if single_decimal_col_indices and col_idx in single_decimal_col_indices:
+                if isinstance(cell_data.value, (int, float)):
+                    try:
+                        cell_value = f"{cell_data.value:.1f}"
+                    except Exception:
+                        pass
+
             # Determine if original cell was numeric so we can align numbers/columns
             is_numeric = isinstance(cell_data.value, (int, float))
             # For Service Unit tables: left-align columns 1 and 2, right-align
@@ -427,8 +445,8 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                                 else:
                                     bg_color = '#1A7A1A'; text_color = 'white'
                         else:
-                            # Fallback: if target missing, color present actual green (or red if zero)
-                            if actual_raw is not None:
+                            # Fallback: if target missing, only color if flag allows it
+                            if not only_color_if_target and actual_raw is not None:
                                 a = float(actual_raw)
                                 if a == 0:
                                     bg_color = '#D73027'; text_color = 'white'
@@ -512,12 +530,20 @@ def render_program_kpi_number(excel_path, df=None):
             st.dataframe(display_df, width='stretch', height=600)
 
 
-def render_program_kpi_fte(excel_path):
+def render_program_kpi_fte_with_color_coding(excel_path):
     st.markdown('<h3 style="font-family: Arial, sans-serif; font-size:16px; margin:4px 0;">Program KPI by Full Time Equivalent (FTE)</h3>', unsafe_allow_html=True)
     legend = get_heatmap_legend_html()
     try:
         if os.path.exists(excel_path):
-            html = excel_to_html_with_merged_cells(excel_path, no_decimals=False)
+            # target_col=4 (Notional Target, hidden), actual_col=5 (2025 values)
+            # only_color_if_target=True: skip color coding for rows without a Notional Target
+            # skip_col_indices=[4]: hide Notional Target column from display
+            # single_decimal_col_indices=[5]: show 2025 actuals to 1 decimal place
+            html = excel_to_html_with_merged_cells(
+                excel_path, no_decimals=False, target_col=4, actual_col=5,
+                only_color_if_target=True, skip_col_indices=[4],
+                single_decimal_col_indices=[5]
+            )
             st.markdown(legend + html, unsafe_allow_html=True)
             try:
                 df = pd.read_excel(excel_path)
@@ -543,7 +569,15 @@ def render_program_kpi_usd(excel_path):
     legend = get_heatmap_legend_html()
     try:
         if os.path.exists(excel_path):
-            html = excel_to_html_with_merged_cells(excel_path, no_decimals=False)
+            # skip_col_indices=[4]: hide Notional Target column
+            # single_decimal_col_indices=[5]: show 2025 actuals to 1 decimal place
+            # only_color_if_target=True: skip color coding for rows without a Notional Target
+            html = excel_to_html_with_merged_cells(
+                excel_path, no_decimals=False,
+                target_col=4, actual_col=5,
+                only_color_if_target=True,
+                skip_col_indices=[4], single_decimal_col_indices=[5]
+            )
             st.markdown(legend + html, unsafe_allow_html=True)
             try:
                 df = pd.read_excel(excel_path)
@@ -1524,7 +1558,7 @@ with tab1:
     # --- Program KPI by FTE: render FTE-specific Excel if present ---
     with prog_sub_2:
         fte_file = os.path.join(root_dir, 'data', 'Program Output KPIs by FTE.xlsx')
-        render_program_kpi_fte(fte_file)
+        render_program_kpi_fte_with_color_coding(fte_file)
 
     # --- Program KPI by Million (USD): render USD-specific Excel if present ---
     with prog_sub_3:
