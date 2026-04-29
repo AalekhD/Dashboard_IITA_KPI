@@ -617,7 +617,8 @@ def render_program_kpi_fte_with_color_coding(excel_path):
             html = excel_to_html_with_merged_cells(
                 excel_path, no_decimals=False, target_col=4, actual_col=5,
                 only_color_if_target=True, skip_col_indices=[4],
-                single_decimal_col_indices=[5], alt_color_scheme=True
+                single_decimal_col_indices=[5], alt_color_scheme=True,
+                yellow_green_rows={21}
             )
             st.markdown(legend + html, unsafe_allow_html=True)
             try:
