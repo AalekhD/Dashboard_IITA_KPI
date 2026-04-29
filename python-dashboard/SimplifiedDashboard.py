@@ -130,10 +130,12 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
             highlight_row = False
 
         # Detect section header rows (merged across columns or bold font) for Program/Service files
+        # Only check columns 1-3 for bold — year/data columns (e.g. col 7) can be bold
+        # throughout in FTE/$ files and must not falsely mark every row as a section header.
         row_is_section_header = False
         if is_program_file or is_service_unit_file:
             try:
-                for col_idx in range(1, max_col + 1):
+                for col_idx in range(1, min(4, max_col + 1)):
                     fmt_cell = ws_format[f"{get_column_letter(col_idx)}{row_idx}"]
                     if getattr(fmt_cell, 'font', None) and getattr(fmt_cell.font, 'bold', False):
                         row_is_section_header = True
