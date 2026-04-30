@@ -42,7 +42,7 @@ def load_kpi_data():
     return df_programs, df_services, df_heatmap
 
 # Function to convert Excel with merged cells to HTML
-def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highlight_row_keyword=None, target_col=4, actual_col=5, only_color_if_target=False, skip_col_indices=None, single_decimal_col_indices=None, alt_color_scheme=False, yellow_green_rows=None):
+def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highlight_row_keyword=None, target_col=4, actual_col=5, only_color_if_target=False, skip_col_indices=None, single_decimal_col_indices=None, alt_color_scheme=False, yellow_green_rows=None, yellow_to_green_rows=None):
     # Load workbook with data_only=True to get calculated values instead of formulas
     wb_data = openpyxl.load_workbook(excel_file_path, data_only=True)
     ws_data = wb_data.active
@@ -75,6 +75,7 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
     suppress_header_color = False
     is_service_unit_file = False
     is_program_file = False
+    is_program_variant_file = False
     try:
         bn = os.path.basename(excel_file_path).lower()
         if 'program output' in bn or 'service unit' in bn:
@@ -83,10 +84,14 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
             is_service_unit_file = True
         if 'program output' in bn:
             is_program_file = True
+            # FTE and USD variants have a secondary header in row 2 that should be gray
+            if 'fte' in bn or ' $' in bn or 'by $' in bn or 'by fte' in bn:
+                is_program_variant_file = True
     except Exception:
         suppress_header_color = False
         is_service_unit_file = False
         is_program_file = False
+        is_program_variant_file = False
     # For service unit files, also suppress coloring for row 2 (secondary header)
     suppress_row2_header = is_service_unit_file
     
@@ -197,7 +202,9 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                     # Check if the cell has percentage format
                     if cell_format.number_format and '%' in cell_format.number_format:
                         try:
-                            pct = cell_value * 100
+                            # Values already stored as whole percentages (e.g. 50 meaning 50%)
+                            # should not be multiplied by 100; only decimal fractions (e.g. 0.5) need it.
+                            pct = cell_value if abs(cell_value) > 1 else cell_value * 100
                             # Respect Excel percent format decimals when possible
                             fmt = str(cell_format.number_format)
                             dec = None
@@ -241,7 +248,9 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                 cell_value = ""
 
             # Override to 1 decimal place for specified columns (skip header row 1)
-            if single_decimal_col_indices and col_idx in single_decimal_col_indices and row_idx != 1:
+            # Do NOT override if the cell has a percentage format — it's already been formatted as "50%"
+            _is_pct_cell = bool(cell_format.number_format and '%' in str(cell_format.number_format))
+            if single_decimal_col_indices and col_idx in single_decimal_col_indices and row_idx != 1 and not _is_pct_cell:
                 if isinstance(cell_data.value, (int, float)):
                     try:
                         if row_idx == 2:
@@ -343,9 +352,9 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                 if highlight_row:
                     styles.append('background-color: #00891a')
                     styles.append('font-weight: bold')
-                # Center-align the top header row and the Service Unit header row (row 9)
-                # Only center row 9 when rendering a Service Unit file
-                cell_align = 'center' if (row_idx == 1 or (is_service_unit_file and row_idx == 9)) else align
+                # Center-align the top header row, the Service Unit header row (row 9),
+                # and row 2 of Program Output FTE/USD variant files
+                cell_align = 'center' if (row_idx == 1 or (is_service_unit_file and row_idx == 9) or (is_program_variant_file and row_idx == 2)) else align
                 styles.append(f'text-align: {cell_align}')
                 # For Service Unit and Program Output tables add a slightly thicker
                 # gray bottom separator for data rows (keeps header/band rows intact).
@@ -353,8 +362,11 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                     try:
                         # For Service Unit files we want to suppress the special
                         # Service Unit header row (row 9). For Program files this
-                        # will be False.
-                        is_srv_header_row = suppress_row2_header and (row_idx == 9 or any(c.value is not None and 'service unit key performance' in str(c.value).lower() for c in row_data))
+                        # will be False. Also suppress for program variant row 2.
+                        is_srv_header_row = (
+                            (suppress_row2_header and (row_idx == 9 or any(c.value is not None and 'service unit key performance' in str(c.value).lower() for c in row_data)))
+                            or (is_program_variant_file and row_idx == 2)
+                        )
                     except Exception:
                         is_srv_header_row = False
                     # Don't add the gray bottom border for top header (row 1)
@@ -362,14 +374,17 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                     if not is_srv_header_row and row_idx != 1 and not row_is_section_header:
                         styles.append('border-bottom: 2px solid rgba(0,0,0,0.25)')
                 # Add section separator for Program and Service Unit tables
-                # Do not add a top border before the Service Unit header row (row 9);
-                # we'll add the stronger border below that row instead.
-                if row_is_section_header and (is_program_file or is_service_unit_file) and row_idx != 1 and not (is_service_unit_file and row_idx == 9):
+                # Do not add a top border before the Service Unit header row (row 9)
+                # or before the Program variant header row (row 2);
+                # we'll add the stronger border below those rows instead.
+                if row_is_section_header and (is_program_file or is_service_unit_file) and row_idx != 1 and not (is_service_unit_file and row_idx == 9) and not (is_program_variant_file and row_idx == 2):
                     styles.append('border-top: 2px solid #000')
                 # If this is a Service Unit file and the Service Unit header row (row 9),
-                # force no green header and unify font size so row 9 matches visually
-                if suppress_row2_header and (row_idx == 9 or
-                                             any(c.value is not None and 'service unit key performance' in str(c.value).lower() for c in row_data)):
+                # or a Program Output FTE/USD file and row 2,
+                # force no green header and unify font size so the row matches visually
+                if (suppress_row2_header and (row_idx == 9 or
+                                             any(c.value is not None and 'service unit key performance' in str(c.value).lower() for c in row_data))) \
+                        or (is_program_variant_file and row_idx == 2):
                     # remove any green highlight and use light-gray background with black text (Service Unit header rows)
                     styles = [s for s in styles if 'background-color' not in s and 'color:' not in s]
                     styles.append('background-color: #e0e0e0')
@@ -428,8 +443,11 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                         else:
                             scale = 1
                         if actual_raw is not None and target_raw is not None:
-                            a = float(actual_raw) * scale
-                            t = float(target_raw) * scale
+                            # Skip the *100 scale for values already stored as whole percentages
+                            _ar = float(actual_raw)
+                            _tr = float(target_raw)
+                            a = _ar if (scale == 100 and abs(_ar) > 1) else _ar * scale
+                            t = _tr if (scale == 100 and abs(_tr) > 1) else _tr * scale
                             mid = t / 2.0 if t is not None else None
                             # helper: interpolate between two hex colors
                             def hex_to_rgb(h):
@@ -440,7 +458,38 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                             def lerp(c1, c2, f):
                                 return tuple(c1[i] + (c2[i] - c1[i]) * f for i in range(3))
 
-                            if yellow_green_rows and row_idx in yellow_green_rows:
+                            if is_program_variant_file and row_idx == 11:
+                                # Row 11 in FTE/USD files: two-step green only
+                                #   >= target       → dark green
+                                #   >= target / 2   → light green
+                                #   <  target / 2   → no color
+                                half = t / 2.0 if (t is not None and t != 0) else None
+                                if t is None or t == 0:
+                                    bg_color = None; text_color = None
+                                elif a >= t:
+                                    bg_color = '#1A7A1A'; text_color = 'white'
+                                elif half is not None and a >= half:
+                                    bg_color = '#A9D18E'; text_color = 'black'
+                                else:
+                                    bg_color = None; text_color = None
+                            elif yellow_to_green_rows and row_idx in yellow_to_green_rows:
+                                # Yellow(<=0) -> Lime green(>=target) gradient
+                                yellow_c    = hex_to_rgb('#FFFF00')
+                                limegreen_c = hex_to_rgb('#92D050')  # lime green at/above target
+                                if t is None or t == 0:
+                                    bg_color = '#92D050'; text_color = 'black'
+                                else:
+                                    if a >= t:
+                                        bg_color = '#92D050'; text_color = 'black'
+                                    elif a <= 0:
+                                        bg_color = '#FFFF00'; text_color = 'black'
+                                    else:
+                                        # Yellow -> Lime green gradient
+                                        f = a / t
+                                        rgb = lerp(yellow_c, limegreen_c, f)
+                                        bg_color = rgb_to_hex(*rgb)
+                                        text_color = 'black'
+                            elif yellow_green_rows and row_idx in yellow_green_rows:
                                 # Special: Yellow(0) -> Orange(target*0.75) -> Green(>=target)
                                 yellow_c = hex_to_rgb('#FFFF00')
                                 orange_c = hex_to_rgb('#FFA500')
@@ -556,9 +605,11 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                 styles = [s for s in styles if not s.strip().startswith('color:')]
                 styles.append('color: black')
                 style_attr = '; '.join(styles)
-                # If this is the Service Unit header row (row 9) or contains the phrase,
-                # ensure bold display and consistent font sizing. Only apply for Service Unit files.
-                if suppress_row2_header and (row_idx == 9 or any(c.value is not None and 'service unit key performance' in str(c.value).lower() for c in row_data)):
+                # If this is the Service Unit header row (row 9), contains the phrase,
+                # or is row 2 of a Program Output FTE/USD variant file,
+                # ensure bold display and consistent font sizing.
+                if (suppress_row2_header and (row_idx == 9 or any(c.value is not None and 'service unit key performance' in str(c.value).lower() for c in row_data))) \
+                        or (is_program_variant_file and row_idx == 2):
                     # ensure style includes bold
                     if 'font-weight' not in style_attr:
                         style_attr = (style_attr + '; font-weight: bold').strip()
@@ -618,7 +669,7 @@ def render_program_kpi_fte_with_color_coding(excel_path):
                 excel_path, no_decimals=False, target_col=4, actual_col=5,
                 only_color_if_target=True, skip_col_indices=[4],
                 single_decimal_col_indices=[5], alt_color_scheme=True,
-                yellow_green_rows={21}
+                yellow_green_rows={21}, yellow_to_green_rows={13}
             )
             st.markdown(legend + html, unsafe_allow_html=True)
             try:
@@ -653,7 +704,8 @@ def render_program_kpi_usd(excel_path):
                 target_col=4, actual_col=5,
                 only_color_if_target=True,
                 skip_col_indices=[4], single_decimal_col_indices=[5],
-                alt_color_scheme=True, yellow_green_rows={21}
+                alt_color_scheme=True, yellow_green_rows={21},
+                yellow_to_green_rows={13}
             )
             st.markdown(legend + html, unsafe_allow_html=True)
             try:
@@ -944,7 +996,9 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                     try:
                         fval = float(val) if val is not None else None
                         if fval is not None and col_idx in pct_col_indices:
-                            fval = fval * 100
+                            # Only scale up decimal fractions; whole-number percentages are kept as-is
+                            if abs(fval) <= 1:
+                                fval = fval * 100
                             val = fval  # keep raw consistent
                     except:
                         fval = None
@@ -981,7 +1035,9 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                         try:
                             fval = float(val) if val is not None else None
                             if fval is not None and col_idx in pct_col_indices:
-                                fval = fval * 100
+                                # Only scale up decimal fractions; whole-number percentages are kept as-is
+                                if abs(fval) <= 1:
+                                    fval = fval * 100
                                 val = fval
                         except:
                             fval = None
