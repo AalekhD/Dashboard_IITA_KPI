@@ -179,6 +179,16 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
             if row_data[col_idx - 1].value is not None:
                 has_row_data = True
                 break
+                # Main cell rendering loop
+                for col_idx in range(1, max_col + 1):
+                    # Special alignment for row 2, col 4 in FTE/USD Program Output files
+                    if row_idx == 2 and is_program_variant_file and col_idx == 4:
+                        html += f'<td style="padding: 4px 6px; background-color: #f5f5f5; text-align: right;" rowspan="{rowspan}" colspan="{colspan}">{cell_value}</td>'
+                        continue
+                    elif row_idx == 2 and is_program_variant_file:
+                        html += f'<td style="padding: 4px 6px; background-color: #f5f5f5; text-align: left;" rowspan="{rowspan}" colspan="{colspan}">{cell_value}</td>'
+                        continue
+                    # ...existing code for normal cell rendering...
         
         # Skip completely empty rows
         if not has_row_data:
@@ -268,28 +278,29 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                     # Check if the cell has percentage format
                     if cell_format.number_format and '%' in cell_format.number_format:
                         try:
-                            # Values already stored as whole percentages (e.g. 50 meaning 50%)
-                            # should not be multiplied by 100; only decimal fractions (e.g. 0.5) need it.
-                            pct = cell_value if abs(cell_value) > 1 else cell_value * 100
-                            # Respect Excel percent format decimals when possible
-                            fmt = str(cell_format.number_format)
-                            dec = None
-                            try:
-                                m = re.search(r"%(?!.*%)", fmt)
-                                # count zeros after decimal point before % (e.g. '0.00%')
-                                md = re.search(r"\.(0+)[^%]*%", fmt)
-                                if md:
-                                    dec = len(md.group(1))
-                                else:
-                                    # if no explicit decimals, assume 0
-                                    dec = 0
-                            except Exception:
-                                dec = None
-                            if dec is None:
-                                s = f"{pct:.2f}".rstrip('0').rstrip('.')
+                            # Only apply 1 decimal formatting for FTE/USD Program Output files
+                            if is_program_variant_file and (is_usd_file or is_fte_file):
+                                pct = cell_value if abs(cell_value) > 1 else cell_value * 100
+                                cell_value = f"{pct:.1f}%"
                             else:
-                                s = f"{pct:.{dec}f}"
-                            cell_value = f"{s}%"
+                                # Existing logic for other files
+                                pct = cell_value if abs(cell_value) > 1 else cell_value * 100
+                                fmt = str(cell_format.number_format)
+                                dec = None
+                                try:
+                                    m = re.search(r"%(?!.*%)", fmt)
+                                    md = re.search(r"\.(0+)[^%]*%", fmt)
+                                    if md:
+                                        dec = len(md.group(1))
+                                    else:
+                                        dec = 0
+                                except Exception:
+                                    dec = None
+                                if dec is None:
+                                    s = f"{pct:.2f}".rstrip('0').rstrip('.')
+                                else:
+                                    s = f"{pct:.{dec}f}"
+                                cell_value = f"{s}%"
                         except Exception:
                             cell_value = str(cell_value)
                     else:
@@ -1227,7 +1238,7 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                     except:
                         per_program_targets.append(None)
                 # Patch below_orig so display row shows computed values not NA
-                for bi, prog in enumerate(below_programs):
+               
                     if 'per program' in prog.lower():
                         below_orig[bi] = [(t, t) for t in per_program_targets]
                         break
