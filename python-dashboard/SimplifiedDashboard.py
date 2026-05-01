@@ -380,13 +380,14 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                     html += f'<th style="background-color: #e0e0e0; color: black; font-weight: bold; text-align: center; font-size: 11pt; font-family: Arial, sans-serif;{width_style} border-bottom: 3px solid #000;" rowspan="{rowspan}" colspan="{colspan}">{header_display}</th>'
                 elif is_program_file:
                     # Program Output: use light-gray header and left-align first two columns
-                    # increase width of column 2 a bit for readability
+                    # Adjust column widths: column 2 to 12%, column 3 to 35%
                     if col_idx == 1:
                         width_style = ' width: 20%;' if is_fte_file else ' width: 14%;'
                     elif col_idx == 2:
                         width_style = ' width: 15%;'
                     elif col_idx == 3:
-                        width_style = ' width: 28%;'
+                        width_style = ' width: 32%;' if is_program_file else ' width: 38%;'
+                        
                     else:
                         width_style = ''
                     text_align = 'left' if col_idx in (1, 2) else 'center'
