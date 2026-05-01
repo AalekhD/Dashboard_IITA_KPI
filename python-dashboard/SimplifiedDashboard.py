@@ -150,12 +150,14 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
             if 'fte' in bn or ' $' in bn or 'by $' in bn or 'by fte' in bn:
                 is_program_variant_file = True
         is_fte_file = 'program output' in bn and 'fte' in bn
+        is_usd_file = 'program output' in bn and ('by $' in bn or ' $' in bn)
     except Exception:
         suppress_header_color = False
         is_service_unit_file = False
         is_program_file = False
         is_program_variant_file = False
         is_fte_file = False
+        is_usd_file = False
     # For service unit files, also suppress coloring for row 2 (secondary header)
     suppress_row2_header = is_service_unit_file
     
@@ -385,11 +387,28 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                     if col_idx == 1:
                         width_style = ' width: 14%;' if is_fte_file else ' width: 14%;'
                     elif col_idx == 2:
-                        width_style = ' width: 7%;' if not is_program_variant_file else ' width: 15%;'
+                        if not is_program_variant_file:
+                            width_style = ' width: 7%;'
+                        elif is_usd_file:
+                            width_style = ' width: 10%;'
+                        else:
+                            width_style = ' width: 15%;'
                     elif col_idx == 3:
-                        width_style = ' width: 38%;' if not is_program_variant_file else ' width: 32%;'
+                        if not is_program_variant_file:
+                            width_style = ' width: 38%;'
+                        elif is_usd_file:
+                            width_style = ' width: 28%;'
+                        else:
+                            width_style = ' width: 32%;'
                     elif col_idx == 4:
-                        width_style = ' width: 10%;' if not is_program_variant_file else ''
+                        if not is_program_variant_file:
+                            width_style = ' width: 10%;'
+                        else:
+                            width_style = ''  # col 4 is hidden for FTE/USD variant files
+                    elif col_idx == 5 and is_program_variant_file:
+                        width_style = ' width: 12%;' if is_usd_file else ''
+                    elif is_usd_file and col_idx >= 6:
+                        width_style = ' width: 6%;'
                     else:
                         width_style = ''
                     text_align = 'left' if col_idx in (1, 2) else 'center'
@@ -655,17 +674,31 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                     if is_service_unit_file:
                         styles.append('width: 26%')
                     elif is_program_file:
-                        # Narrower col 2 for base file only; variants keep original width
-                        styles.append('width: 7%' if not is_program_variant_file else 'width: 24%')
+                        if not is_program_variant_file:
+                            styles.append('width: 7%')
+                        elif is_usd_file:
+                            styles.append('width: 10%')
+                        else:
+                            styles.append('width: 24%')
                 elif col_idx == 3:
                     # Make column 3 wider for Program Output tables
                     if is_program_file:
-                        # Wider col 3 for base file only; variants keep original width
-                        styles.append('width: 38%' if not is_program_variant_file else 'width: 40%')
+                        if not is_program_variant_file:
+                            styles.append('width: 38%')
+                        elif is_usd_file:
+                            styles.append('width: 28%')
+                        else:
+                            styles.append('width: 40%')
                 elif col_idx == 4:
-                    # Make column 4 wider for the base Program Output file
+                    # col 4 is hidden for FTE/USD variant files; only set width for base file
                     if is_program_file and not is_program_variant_file:
                         styles.append('width: 10%')
+                elif col_idx == 5:
+                    if is_program_file and is_usd_file:
+                        styles.append('width: 12%')
+                elif col_idx >= 6:
+                    if is_program_file and is_usd_file:
+                        styles.append('width: 6%')
                 if bg_color:
                     styles.append(f'background-color: {bg_color}')
                 # We will force data text color to black for consistency (append below)
@@ -742,11 +775,10 @@ def render_program_kpi_fte_with_color_coding(excel_path):
             _row_overrides = {1: (None, None), 2: (None, None)}
             _row_overrides.update({fte_row: _base_colors.get(fte_row - 1, (None, None))
                               for fte_row in range(3, 30)})
-            # skip_col_indices=[4]: hide Notional Target column from display
-            # single_decimal_col_indices=[5]: show 2025 actuals to 1 decimal place
+            # single_decimal_col_indices=[4]: show 2025 actuals to 1 decimal place
             html = excel_to_html_with_merged_cells(
-                excel_path, no_decimals=False, actual_col=5,
-                skip_col_indices=[4], single_decimal_col_indices=[5],
+                excel_path, no_decimals=False, actual_col=4,
+                single_decimal_col_indices=[4],
                 row_color_overrides=_row_overrides
             )
             st.markdown(legend + html, unsafe_allow_html=True)
@@ -781,11 +813,10 @@ def render_program_kpi_usd(excel_path):
             _row_overrides = {1: (None, None), 2: (None, None)}
             _row_overrides.update({usd_row: _base_colors.get(usd_row - 1, (None, None))
                               for usd_row in range(3, 30)})
-            # skip_col_indices=[4]: hide Notional Target column from display
-            # single_decimal_col_indices=[5]: show 2025 actuals to 1 decimal place
+            # single_decimal_col_indices=[4]: show 2025 actuals to 1 decimal place
             html = excel_to_html_with_merged_cells(
-                excel_path, no_decimals=False, actual_col=5,
-                skip_col_indices=[4], single_decimal_col_indices=[5],
+                excel_path, no_decimals=False, actual_col=4,
+                single_decimal_col_indices=[4],
                 row_color_overrides=_row_overrides
             )
             st.markdown(legend + html, unsafe_allow_html=True)
