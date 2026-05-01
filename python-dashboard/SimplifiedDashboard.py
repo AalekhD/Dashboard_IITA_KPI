@@ -441,7 +441,8 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                     styles = [s for s in styles if 'background-color' not in s and 'color:' not in s]
                     styles.append('background-color: #e0e0e0')
                     styles.append('color: black')
-                    styles.append('font-weight: bold')
+                    if not (is_program_variant_file and row_idx == 2):
+                        styles.append('font-weight: bold')
                     # ensure the font size for these service-unit header rows matches the main header
                     styles.append('font-size: 11pt')
                     styles.append('font-family: Arial, sans-serif')
@@ -675,8 +676,7 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                 # If this is the Service Unit header row (row 9), contains the phrase,
                 # or is row 2 of a Program Output FTE/USD variant file,
                 # ensure bold display and consistent font sizing.
-                if (suppress_row2_header and (row_idx == 9 or any(c.value is not None and 'service unit key performance' in str(c.value).lower() for c in row_data))) \
-                        or (is_program_variant_file and row_idx == 2):
+                if suppress_row2_header and (row_idx == 9 or any(c.value is not None and 'service unit key performance' in str(c.value).lower() for c in row_data)):
                     # ensure style includes bold
                     if 'font-weight' not in style_attr:
                         style_attr = (style_attr + '; font-weight: bold').strip()
@@ -687,6 +687,13 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                     if 'font-family' not in style_attr:
                         style_attr = (style_attr + '; font-family: Arial, sans-serif').strip()
                     cell_display = f'<strong>{cell_value}</strong>'
+                elif is_program_variant_file and row_idx == 2:
+                    # row 2 of FTE/USD variant files: styled but not bold
+                    if 'font-size' not in style_attr:
+                        style_attr = (style_attr + '; font-size: 11pt').strip()
+                    if 'font-family' not in style_attr:
+                        style_attr = (style_attr + '; font-family: Arial, sans-serif').strip()
+                    cell_display = cell_value
                 else:
                     cell_display = cell_value
                 html += f'<td style="{style_attr};" rowspan="{rowspan}" colspan="{colspan}">{cell_display}</td>'
