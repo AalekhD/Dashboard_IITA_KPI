@@ -401,14 +401,14 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                         width_style = ' width: 7%;'
                     elif col_idx == 3:
                         if not is_program_variant_file:
-                            width_style = ' width: 8%;'  # thinner column 3
+                            width_style = ' width: 14%;'  # a bit wider
                         elif is_usd_file:
                             width_style = ' width: 28%;'
                         else:
                             width_style = ' width: 32%;'
                     elif col_idx == 4:
                         if not is_program_variant_file:
-                            width_style = ' width: 12%;'  # just a bit wide
+                            width_style = ' width: 8%;'  # just a bit thinner
                         else:
                             width_style = ''  # col 4 is hidden for FTE/USD variant files
                     elif not is_program_variant_file and col_idx in (5,6,7,8,9,10):
