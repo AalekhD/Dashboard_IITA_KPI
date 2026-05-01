@@ -342,7 +342,10 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
             is_numeric = isinstance(cell_data.value, (int, float))
             # For Service Unit tables: left-align columns 1 and 2, right-align
             # columns 3 and 4, center other columns. For other tables keep existing rules.
-            if is_service_unit_file:
+            # Force column 4 to be right-aligned from row 3 onwards for all Excel files
+            if col_idx == 4 and row_idx >= 3:
+                align = 'right'
+            elif is_service_unit_file:
                 if col_idx in (1, 2):
                     align = 'left'
                 elif col_idx in (3, 4):
@@ -351,10 +354,12 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                     align = 'center'
             elif is_program_file:
                 # For Program Output files ensure first two columns are left-aligned
-                # Force column 4 to be right-aligned, column 5 always right, and keep numeric cells right-aligned
-                if col_idx in (1, 2):
+                # For FTE/USD variants, force column 1 to be left-aligned
+                if is_program_variant_file and col_idx == 1:
                     align = 'left'
-                elif col_idx in (4, 5):
+                elif col_idx in (1, 2):
+                    align = 'left'
+                elif col_idx == 5:
                     align = 'right'
                 elif is_numeric:
                     align = 'right'
@@ -436,8 +441,15 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                     styles.append('font-weight: bold')
                 # Center-align the top header row, the Service Unit header row (row 9),
                 # and row 2 of Program Output FTE/USD variant files
-                cell_align = 'center' if (row_idx == 1 or (is_service_unit_file and row_idx == 9) or (is_program_variant_file and row_idx == 2)) else align
-                styles.append(f'text-align: {cell_align}')
+                # Force column 4 to be right-aligned for row 2 and from row 3 onwards for all Excel files
+                # Force column 1 to be left-aligned for row 2 and all other rows
+                if col_idx == 4 and row_idx >= 2:
+                    styles.append('text-align: right')
+                elif col_idx == 1 and row_idx >= 2:
+                    styles.append('text-align: left')
+                else:
+                    cell_align = 'center' if (row_idx == 1 or (is_service_unit_file and row_idx == 9) or (is_program_variant_file and row_idx == 2)) else align
+                    styles.append(f'text-align: {cell_align}')
                 # For Service Unit and Program Output tables add a slightly thicker
                 # gray bottom separator for data rows (keeps header/band rows intact).
                 if is_service_unit_file or is_program_file:
