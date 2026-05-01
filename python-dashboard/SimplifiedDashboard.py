@@ -373,7 +373,7 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                     if col_idx == 1:
                         width_style = ' width: 32%;'
                     elif col_idx == 2:
-                        width_style = ' width: 26%;'
+                        width_style = ' width: 20%;'
                     else:
                         width_style = ''
                     # add a stronger bottom border for the top header row in Service Unit tables
@@ -389,7 +389,7 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                     elif col_idx == 3:
                         width_style = ' width: 38%;' if not is_program_variant_file else ' width: 32%;'
                     elif col_idx == 4:
-                        width_style = ' width: 14%;' if not is_program_variant_file else ''
+                        width_style = ' width: 10%;' if not is_program_variant_file else ''
                     else:
                         width_style = ''
                     text_align = 'left' if col_idx in (1, 2) else 'center'
@@ -664,7 +664,7 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                 elif col_idx == 4:
                     # Make column 4 wider for the base Program Output file
                     if is_program_file and not is_program_variant_file:
-                        styles.append('width: 14%')
+                        styles.append('width: 10%')
                 if bg_color:
                     styles.append(f'background-color: {bg_color}')
                 # We will force data text color to black for consistency (append below)
