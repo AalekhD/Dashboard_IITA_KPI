@@ -42,7 +42,69 @@ def load_kpi_data():
     return df_programs, df_services, df_heatmap
 
 # Function to convert Excel with merged cells to HTML
-def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highlight_row_keyword=None, target_col=4, actual_col=5, only_color_if_target=False, skip_col_indices=None, single_decimal_col_indices=None, alt_color_scheme=False, yellow_green_rows=None, yellow_to_green_rows=None):
+def _compute_kpi_colors_from_base(base_excel_path, target_col=4, actual_col=5, data_start_row=2):
+    """Compute red→yellow→green background colours for each data row from the base
+    Program Output KPIs.xlsx file using the default colour scheme.
+    Returns {row_idx_in_base: (bg_color, text_color)}.
+    """
+    try:
+        wb_d = openpyxl.load_workbook(base_excel_path, data_only=True)
+        wb_f = openpyxl.load_workbook(base_excel_path)
+        ws_d = wb_d.active
+        ws_f = wb_f.active
+    except Exception:
+        return {}
+
+    def _h2r(h):
+        h = h.lstrip('#')
+        return tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
+    def _r2h(r, g, b):
+        return '#%02X%02X%02X' % (int(r), int(g), int(b))
+    def _lerp(c1, c2, f):
+        return tuple(c1[i] + (c2[i] - c1[i]) * f for i in range(3))
+
+    low_c  = _h2r('#D73027')
+    mid_c  = _h2r('#FFFF00')
+    high_c = _h2r('#1A7A1A')
+
+    colors = {}
+    for row_idx in range(data_start_row, ws_d.max_row + 1):
+        try:
+            actual_raw = ws_d.cell(row_idx, actual_col).value
+            target_raw = ws_d.cell(row_idx, target_col).value
+            if actual_raw is None or target_raw is None:
+                colors[row_idx] = (None, None)
+                continue
+            if isinstance(actual_raw, str) and actual_raw.strip().upper() in ('N/A', 'NA', '#N/A'):
+                colors[row_idx] = (None, None)
+                continue
+            actual_fmt = getattr(ws_f.cell(row_idx, actual_col), 'number_format', None)
+            target_fmt = getattr(ws_f.cell(row_idx, target_col), 'number_format', None)
+            scale = 100 if ((actual_fmt and '%' in str(actual_fmt)) or (target_fmt and '%' in str(target_fmt))) else 1
+            _ar = float(actual_raw)
+            _tr = float(target_raw)
+            a = _ar if (scale == 100 and abs(_ar) > 1) else _ar * scale
+            t = _tr if (scale == 100 and abs(_tr) > 1) else _tr * scale
+            mid = t / 2.0 if t else None
+            if t is None or t == 0:
+                bg = '#D73027' if a == 0 else '#1A7A1A'; tc = 'white'
+            elif a <= 0:
+                bg = '#D73027'; tc = 'white'
+            elif mid and a < mid:
+                f = a / mid if mid > 0 else 0
+                bg = _r2h(*_lerp(low_c, mid_c, f)); tc = 'black'
+            elif a < t:
+                f = (a - mid) / (t - mid) if mid and (t - mid) > 0 else 0
+                bg = _r2h(*_lerp(mid_c, high_c, f)); tc = 'black'
+            else:
+                bg = '#1A7A1A'; tc = 'white'
+            colors[row_idx] = (bg, tc)
+        except Exception:
+            colors[row_idx] = (None, None)
+    return colors
+
+
+def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highlight_row_keyword=None, target_col=4, actual_col=5, only_color_if_target=False, skip_col_indices=None, single_decimal_col_indices=None, alt_color_scheme=False, yellow_green_rows=None, yellow_to_green_rows=None, row_color_overrides=None):
     # Load workbook with data_only=True to get calculated values instead of formulas
     wb_data = openpyxl.load_workbook(excel_file_path, data_only=True)
     ws_data = wb_data.active
@@ -87,11 +149,13 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
             # FTE and USD variants have a secondary header in row 2 that should be gray
             if 'fte' in bn or ' $' in bn or 'by $' in bn or 'by fte' in bn:
                 is_program_variant_file = True
+        is_fte_file = 'program output' in bn and 'fte' in bn
     except Exception:
         suppress_header_color = False
         is_service_unit_file = False
         is_program_file = False
         is_program_variant_file = False
+        is_fte_file = False
     # For service unit files, also suppress coloring for row 2 (secondary header)
     suppress_row2_header = is_service_unit_file
     
@@ -333,7 +397,7 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                     # Program Output: use light-gray header and left-align first two columns
                     # increase width of column 2 a bit for readability
                     if col_idx == 1:
-                        width_style = ' width: 14%;'
+                        width_style = ' width: 20%;' if is_fte_file else ' width: 14%;'
                     elif col_idx == 2:
                         width_style = ' width: 15%;'
                     elif col_idx == 3:
@@ -579,6 +643,15 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                     except Exception:
                         bg_color = None
                         text_color = None
+                    # Apply pre-computed colour override AFTER calculation (overrides target-based result)
+                    if row_color_overrides is not None and row_idx in row_color_overrides:
+                        _ov_raw = cell_data.value
+                        _ov_na = (_ov_raw is None or
+                                  (isinstance(_ov_raw, str) and _ov_raw.strip().upper() in ('N/A', 'NA', '#N/A')))
+                        if not _ov_na and row_color_overrides[row_idx][0] is not None:
+                            bg_color, text_color = row_color_overrides[row_idx]
+                        else:
+                            bg_color = None; text_color = None
 
                 # First column cells (row headers) should have slightly larger font
                 if col_idx == 1:
@@ -587,7 +660,7 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                     if is_service_unit_file:
                         styles.append('width: 24%')
                     elif is_program_file:
-                        styles.append('width: 14%')
+                        styles.append('width: 20%' if is_fte_file else 'width: 14%')
                 elif col_idx == 2:
                     # Make column 2 slightly wider for Program Output and Service Unit tables
                     if is_service_unit_file:
@@ -661,15 +734,19 @@ def render_program_kpi_fte_with_color_coding(excel_path):
     legend = get_heatmap_legend_html()
     try:
         if os.path.exists(excel_path):
-            # target_col=4 (Notional Target, hidden), actual_col=5 (2025 values)
-            # only_color_if_target=True: skip color coding for rows without a Notional Target
+            # Derive colours from the base Program Output KPIs.xlsx (same folder)
+            # Row mapping: FTE row N  →  base row N-1  (FTE has extra gray row 2)
+            _base_path = os.path.join(os.path.dirname(excel_path), 'Program Output KPIs.xlsx')
+            _base_colors = _compute_kpi_colors_from_base(_base_path) if os.path.exists(_base_path) else {}
+            _row_overrides = {1: (None, None), 2: (None, None)}
+            _row_overrides.update({fte_row: _base_colors.get(fte_row - 1, (None, None))
+                              for fte_row in range(3, 30)})
             # skip_col_indices=[4]: hide Notional Target column from display
             # single_decimal_col_indices=[5]: show 2025 actuals to 1 decimal place
             html = excel_to_html_with_merged_cells(
-                excel_path, no_decimals=False, target_col=4, actual_col=5,
-                only_color_if_target=True, skip_col_indices=[4],
-                single_decimal_col_indices=[5], alt_color_scheme=True,
-                yellow_green_rows={21}, yellow_to_green_rows={13}
+                excel_path, no_decimals=False, actual_col=5,
+                skip_col_indices=[4], single_decimal_col_indices=[5],
+                row_color_overrides=_row_overrides
             )
             st.markdown(legend + html, unsafe_allow_html=True)
             try:
@@ -696,16 +773,19 @@ def render_program_kpi_usd(excel_path):
     legend = get_heatmap_legend_html()
     try:
         if os.path.exists(excel_path):
-            # skip_col_indices=[4]: hide Notional Target column
+            # Derive colours from the base Program Output KPIs.xlsx (same folder)
+            # Row mapping: $ row N  →  base row N-1  ($ file has extra gray row 2)
+            _base_path = os.path.join(os.path.dirname(excel_path), 'Program Output KPIs.xlsx')
+            _base_colors = _compute_kpi_colors_from_base(_base_path) if os.path.exists(_base_path) else {}
+            _row_overrides = {1: (None, None), 2: (None, None)}
+            _row_overrides.update({usd_row: _base_colors.get(usd_row - 1, (None, None))
+                              for usd_row in range(3, 30)})
+            # skip_col_indices=[4]: hide Notional Target column from display
             # single_decimal_col_indices=[5]: show 2025 actuals to 1 decimal place
-            # only_color_if_target=True: skip color coding for rows without a Notional Target
             html = excel_to_html_with_merged_cells(
-                excel_path, no_decimals=False,
-                target_col=4, actual_col=5,
-                only_color_if_target=True,
+                excel_path, no_decimals=False, actual_col=5,
                 skip_col_indices=[4], single_decimal_col_indices=[5],
-                alt_color_scheme=True, yellow_green_rows={21},
-                yellow_to_green_rows={13}
+                row_color_overrides=_row_overrides
             )
             st.markdown(legend + html, unsafe_allow_html=True)
             try:
