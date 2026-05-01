@@ -397,13 +397,11 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                             width_style = ' width: 32%;'
                     elif col_idx == 4:
                         if not is_program_variant_file:
-                            width_style = ' width: 10%;'
+                            width_style = ' width: 8%;'
                         else:
                             width_style = ''  # col 4 is hidden for FTE/USD variant files
-                    elif col_idx == 5 and is_program_variant_file:
-                        width_style = ' width: 12%;' if is_usd_file else ''
-                    elif is_usd_file and col_idx >= 6:
-                        width_style = ' width: 6%;'
+                    elif is_usd_file and col_idx in (5,6,7,8,9):
+                        width_style = ' width: 8%;'
                     else:
                         width_style = ''
                     text_align = 'left' if col_idx in (1, 2) else 'center'
@@ -415,6 +413,9 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
             else:
                 # Build inline style for this cell
                 styles = []
+                # Set same width for columns 5-9 in Program Output KPIs by $.xlsx (USD variant)
+                if is_usd_file and col_idx in (5,6,7,8,9):
+                    styles.append('width: 8%')
                 if highlight_row:
                     styles.append('background-color: #00891a')
                     styles.append('font-weight: bold')
