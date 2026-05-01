@@ -387,12 +387,7 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                     if col_idx == 1:
                         width_style = ' width: 14%;' if is_fte_file else ' width: 14%;'
                     elif col_idx == 2:
-                        if not is_program_variant_file:
-                            width_style = ' width: 7%;'
-                        elif is_usd_file:
-                            width_style = ' width: 10%;'
-                        else:
-                            width_style = ' width: 15%;'
+                        width_style = ' width: 7%;'
                     elif col_idx == 3:
                         if not is_program_variant_file:
                             width_style = ' width: 38%;'
@@ -674,12 +669,7 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                     if is_service_unit_file:
                         styles.append('width: 26%')
                     elif is_program_file:
-                        if not is_program_variant_file:
-                            styles.append('width: 7%')
-                        elif is_usd_file:
-                            styles.append('width: 10%')
-                        else:
-                            styles.append('width: 24%')
+                        styles.append('width: 7%')
                 elif col_idx == 3:
                     # Make column 3 wider for Program Output tables
                     if is_program_file:
@@ -1231,7 +1221,7 @@ def create_heatmap_visualization(excel_file_path, heatmap_max_row=16,
                 for col_idx in range(data_col_start, data_col_start + len(kpi_names)):
                     val = merged_val(annual_target_row, col_idx)
                     try:
-                        annl = float(val) if val is not None else None
+                        annl = float(val) if val else None
                         per_program_targets.append(annl / n if annl is not None and n > 0 else None)
                     except:
                         per_program_targets.append(None)
