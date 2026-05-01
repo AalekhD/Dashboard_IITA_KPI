@@ -383,7 +383,7 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                     # Col 2/3 widths: narrower col 2 and wider col 3 for the base file only;
                     # FTE/USD variants keep their original widths.
                     if col_idx == 1:
-                        width_style = ' width: 20%;' if is_fte_file else ' width: 14%;'
+                        width_style = ' width: 14%;' if is_fte_file else ' width: 14%;'
                     elif col_idx == 2:
                         width_style = ' width: 10%;' if not is_program_variant_file else ' width: 15%;'
                     elif col_idx == 3:
@@ -646,7 +646,7 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                     if is_service_unit_file:
                         styles.append('width: 24%')
                     elif is_program_file:
-                        styles.append('width: 20%' if is_fte_file else 'width: 14%')
+                        styles.append('width: 16%' if is_fte_file else 'width: 14%')
                 elif col_idx == 2:
                     # Make column 2 slightly wider for Program Output and Service Unit tables
                     if is_service_unit_file:
