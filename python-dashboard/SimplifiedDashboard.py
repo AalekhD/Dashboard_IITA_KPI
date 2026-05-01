@@ -318,23 +318,8 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                 if isinstance(cell_data.value, (int, float)):
                     try:
                         if row_idx == 2:
-                            # Indian number format: last 3 digits, then groups of 2
-                            def indian_fmt(n):
-                                s = str(int(round(n)))
-                                neg = s.startswith('-')
-                                if neg: s = s[1:]
-                                if len(s) <= 3:
-                                    return ('-' if neg else '') + s
-                                last3 = s[-3:]
-                                rest = s[:-3]
-                                parts = []
-                                while len(rest) > 2:
-                                    parts.append(rest[-2:])
-                                    rest = rest[:-2]
-                                if rest:
-                                    parts.append(rest)
-                                return ('-' if neg else '') + ','.join(reversed(parts)) + ',' + last3
-                            cell_value = indian_fmt(cell_data.value)
+                            # Display row 2 totals with standard thousands separators, no decimals
+                            cell_value = f"{int(round(cell_data.value)):,}"
                         else:
                             cell_value = f"{cell_data.value:,.1f}"
                     except Exception:
