@@ -380,14 +380,14 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                     html += f'<th style="background-color: #e0e0e0; color: black; font-weight: bold; text-align: center; font-size: 11pt; font-family: Arial, sans-serif;{width_style} border-bottom: 3px solid #000;" rowspan="{rowspan}" colspan="{colspan}">{header_display}</th>'
                 elif is_program_file:
                     # Program Output: use light-gray header and left-align first two columns
-                    # Adjust column widths: column 2 to 12%, column 3 to 35%
+                    # Col 2/3 widths: narrower col 2 and wider col 3 for the base file only;
+                    # FTE/USD variants keep their original widths.
                     if col_idx == 1:
                         width_style = ' width: 20%;' if is_fte_file else ' width: 14%;'
                     elif col_idx == 2:
-                        width_style = ' width: 15%;'
+                        width_style = ' width: 10%;' if not is_program_variant_file else ' width: 15%;'
                     elif col_idx == 3:
-                        width_style = ' width: 32%;' if is_program_file else ' width: 38%;'
-                        
+                        width_style = ' width: 38%;' if not is_program_variant_file else ' width: 32%;'
                     else:
                         width_style = ''
                     text_align = 'left' if col_idx in (1, 2) else 'center'
@@ -652,11 +652,13 @@ def excel_to_html_with_merged_cells(excel_file_path, no_decimals=False, highligh
                     if is_service_unit_file:
                         styles.append('width: 26%')
                     elif is_program_file:
-                        styles.append('width: 24%')
+                        # Narrower col 2 for base file only; variants keep original width
+                        styles.append('width: 10%' if not is_program_variant_file else 'width: 24%')
                 elif col_idx == 3:
                     # Make column 3 wider for Program Output tables
                     if is_program_file:
-                        styles.append('width: 28%')
+                        # Wider col 3 for base file only; variants keep original width
+                        styles.append('width: 38%' if not is_program_variant_file else 'width: 40%')
                 if bg_color:
                     styles.append(f'background-color: {bg_color}')
                 # We will force data text color to black for consistency (append below)
